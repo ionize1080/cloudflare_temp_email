@@ -49,10 +49,21 @@ CREATE TABLE IF NOT EXISTS address_sender (
     address TEXT UNIQUE,
     balance INTEGER DEFAULT 0,
     enabled INTEGER DEFAULT 1,
+    requested_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_address_sender_address ON address_sender(address);
+
+CREATE TABLE IF NOT EXISTS admin_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor TEXT NOT NULL,
+    method TEXT NOT NULL,
+    path TEXT NOT NULL,
+    status INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created_at ON admin_audit(created_at);
 
 CREATE TABLE IF NOT EXISTS sendbox (
     id INTEGER PRIMARY KEY,

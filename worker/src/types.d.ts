@@ -108,6 +108,7 @@ type UserPayload = {
 }
 
 type Variables = {
+    accessEmail: string,
     userPayload: UserPayload,
     userRolePayload: string | undefined | null,
     jwtPayload: JwtPayload,

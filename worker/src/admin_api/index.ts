@@ -17,8 +17,12 @@ import db_api from './db_api'
 import ip_blacklist_settings from './ip_blacklist_settings'
 import ai_extract_settings from './ai_extract_settings'
 import { EmailRuleSettings } from '../models'
+import consoleApi from './console';
+import { updateSenderAccess, SenderAccessError } from '../../../shared/sender-access.mjs';
+import { deleteMailbox } from '../../../shared/admin-data.mjs';
 
 export const api = new Hono<HonoCustomType>()
+api.route('/', consoleApi);
 
 api.get('/admin/address', async (c) => {
     const { limit, offset, query } = c.req.query();
@@ -66,32 +70,11 @@ api.post('/admin/new_address', async (c) => {
 })
 
 api.delete('/admin/delete_address/:id', async (c) => {
-    const msgs = i18n.getMessagesbyContext(c);
-    const { id } = c.req.param();
-    const { success } = await c.env.DB.prepare(
-        `DELETE FROM address WHERE id = ? `
-    ).bind(id).run();
-    if (!success) {
-        return c.text(msgs.OperationFailedMsg, 500)
-    }
-    const { success: mailSuccess } = await c.env.DB.prepare(
-        `DELETE FROM raw_mails WHERE address IN`
-        + ` (select name from address where id = ?) `
-    ).bind(id).run();
-    if (!mailSuccess) {
-        return c.text(msgs.OperationFailedMsg, 500)
-    }
-    const { success: sendAccess } = await c.env.DB.prepare(
-        `DELETE FROM address_sender WHERE address IN`
-        + ` (select name from address where id = ?) `
-    ).bind(id).run();
-    const { success: usersAddressSuccess } = await c.env.DB.prepare(
-        `DELETE FROM users_address WHERE address_id = ?`
-    ).bind(id).run();
-    return c.json({
-        success: success && mailSuccess && sendAccess && usersAddressSuccess
-    })
-})
+    const id = Number(c.req.param('id'));
+    if (!Number.isSafeInteger(id) || id <= 0) return c.json({ error: '无效的邮箱 ID' }, 400);
+    const success = await deleteMailbox(c.env.DB, id);
+    return success ? c.json({ success: true }) : c.json({ error: '邮箱不存在' }, 404);
+});
 
 api.delete('/admin/clear_inbox/:id', async (c) => {
     const msgs = i18n.getMessagesbyContext(c);
@@ -168,42 +151,29 @@ api.get('/admin/mails_unknow', admin_mail_api.getUnknowMails);
 api.delete('/admin/mails/:id', admin_mail_api.deleteMail)
 
 api.get('/admin/address_sender', async (c) => {
-    const { address, limit, offset } = c.req.query();
-    if (address) {
-        return await handleListQuery(c,
-            `SELECT * FROM address_sender where address = ? `,
-            `SELECT count(*) as count FROM address_sender where address = ? `,
-            [address], limit, offset
-        );
-    }
+    const { address, limit, offset, pending } = c.req.query();
+    const conditions = [], params = [];
+    if (address) { conditions.push('address LIKE ?'); params.push(`%${address.trim().slice(0, 254)}%`); }
+    if (pending === '1') conditions.push('requested_at IS NOT NULL');
+    const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : '';
     return await handleListQuery(c,
-        `SELECT * FROM address_sender `,
-        `SELECT count(*) as count FROM address_sender `,
-        [], limit, offset
+        `SELECT * FROM address_sender${where}`,
+        `SELECT count(*) as count FROM address_sender${where}`,
+        params, limit, offset
     );
 })
 
 api.post('/admin/address_sender', async (c) => {
-    const msgs = i18n.getMessagesbyContext(c);
-    /* eslint-disable prefer-const */
-    let { address, address_id, balance, enabled } = await c.req.json();
-    /* eslint-enable prefer-const */
-    if (!address_id) {
-        return c.text(msgs.InvalidAddressIdMsg, 400)
-    }
-    enabled = enabled ? 1 : 0;
-    const { success } = await c.env.DB.prepare(
-        `UPDATE address_sender SET enabled = ?, balance = ? WHERE id = ? `
-    ).bind(enabled, balance, address_id).run();
-    if (!success) {
-        return c.text(msgs.OperationFailedMsg, 500)
-    }
-    await sendAdminInternalMail(
-        c, address, "Account Send Access Updated",
-        `Your send access has been ${enabled ? "enabled" : "disabled"}, balance: ${balance}`
+    let updated;
+    try { updated = await updateSenderAccess(c.env.DB, await c.req.json()); }
+    catch (error) { return c.json({ error: error instanceof SenderAccessError ? error.message : '保存失败，请稍后重试' }, error instanceof SenderAccessError ? 400 : 500); }
+    const { address, enabled, balance } = updated;
+    const notificationSent = await sendAdminInternalMail(
+        c, address, '发件权限已更新',
+        `管理员已${enabled ? '开通' : '停用'}此邮箱的发件权限，剩余额度：${balance} 封。请在写信窗口点击“刷新状态”。`
     );
     return c.json({
-        success: success
+        success: true, notification_sent: notificationSent
     })
 })
 

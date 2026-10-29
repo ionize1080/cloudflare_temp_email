@@ -8,6 +8,18 @@ Gmail-inspired, responsive Vue mailbox with a search bar, folder navigation, sel
 
 Search is scoped to the selected folder and searches stored raw content/sender fields. MIME-encoded words may not match their decoded equivalents. Stars and read indicators are stored on this device, not synchronized. Drafts are scoped to the selected mailbox in sessionStorage; closing the browser session or logging out clears them. The new composer sends plain text; existing rich-text administrative tools remain available. There is no pretend Trash folder: deletion requires explicit confirmation and is permanent, matching the existing API.
 
+## Administration and sending requests
+
+The Gmail-inspired admin workspace at `/admin` has a searchable sidebar, overview, sender approvals, mailbox/user management, security status, and operation history. Existing advanced settings remain under More Features and load on demand. Direct links such as `/admin?tab=senderAccess`, `/admin?tab=user_settings`, and `/admin?tab=security` open the appropriate section.
+
+Mailbox users request permission from the compose window or mailbox/account panel. Requests always await administrator review; this fork does not automatically grant `DEFAULT_SEND_BALANCE`. Duplicate requests are idempotent and cannot reset existing quotas. Exhausted or disabled mailboxes can request review again. Administrators can review a pending request or configure an existing mailbox directly, choose whether sending is enabled, and set the remaining total quota (integer 0–100000). A successful change writes an internal notification; the user can click Refresh Status in the composer. Existing approved quotas are preserved.
+
+The additive `db/2026-10-29-admin-console.sql` migration adds `address_sender.requested_at` and `admin_audit`, advancing the schema to v0.0.6. It has been applied to production after saving a Time Travel bookmark. Do not reapply its ALTER statement; the admin database migration checks column presence. Legacy disabled entries without a pending timestamp can still be managed from All or requested again by their owners.
+
+Audit history records the verified Access identity, method, path (without query string), HTTP result and UTC time for authorized admin mutations and credential reads. It begins with this release and retains the latest 1000 records. Passwords, tokens, bodies and mail contents are not logged. Audit writes run with `waitUntil`; failures emit a structured error. This is operational history, not a tamper-proof compliance log. The admin page clears its cached management password after 15 idle minutes; this does not revoke the independently managed Access session. A manual lock and Access logout are also available.
+
+Mailbox deletion now removes related records before the address in a single D1 transaction, preventing orphaned mail/permission records and partial cleanup. No production deletions were used for validation. Immediate maintenance cleanup requires typing an explicit confirmation.
+
 ## Security boundary
 
 The existing TP-Auth Access application protects the canonical domain. Both Pages middleware and the API Worker verify the RS256 signature, fixed issuer, fixed audience, expiry and not-before claim. Missing/invalid assertions fail closed, including on workers.dev. Pages forwards API requests over the `BACKEND` service binding. Public email delivery uses the Worker's separate `email()` handler and remains unaffected. Programmatic HTTP clients now need an authorized Access assertion in addition to their existing mailbox/admin credentials.
@@ -23,7 +35,7 @@ Use Node 22 and pnpm 10.10.0 and a modern browser with ES2022 support. Productio
 ```sh
 pnpm --dir worker install --frozen-lockfile
 pnpm --dir frontend install --frozen-lockfile
-node --test checks/security.test.mjs
+node --test checks/*.test.mjs
 pnpm --dir worker lint
 pnpm --dir worker exec wrangler deploy --config wrangler.production.jsonc --dry-run --outdir dist --minify
 pnpm --dir frontend build:pages

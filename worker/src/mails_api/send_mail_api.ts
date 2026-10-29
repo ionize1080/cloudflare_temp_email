@@ -6,38 +6,31 @@ import { WorkerMailer, WorkerMailerOptions } from 'worker-mailer';
 
 import i18n from '../i18n';
 import { CONSTANTS } from '../constants'
-import { getJsonSetting, getDomains, getIntValue, getBooleanValue, getStringValue, getJsonObjectValue, getSplitStringListValue } from '../utils';
+import { getJsonSetting, getDomains, getBooleanValue, getStringValue, getJsonObjectValue, getSplitStringListValue } from '../utils';
+import { requestSenderAccess, senderState } from '../../../shared/sender-access.mjs';
 import { GeoData } from '../models'
 import { handleListQuery } from '../common'
 
 
 export const api = new Hono<HonoCustomType>()
 
-api.post('/api/requset_send_mail_access', async (c) => {
+const requestAccess = async (c: Context<HonoCustomType>) => {
     const msgs = i18n.getMessagesbyContext(c);
     const { address } = c.get("jwtPayload")
     if (!address) {
         return c.text(msgs.AddressNotFoundMsg, 400)
     }
     try {
-        const default_balance = getIntValue(c.env.DEFAULT_SEND_BALANCE, 0);
-        const { success } = await c.env.DB.prepare(
-            `INSERT INTO address_sender (address, balance, enabled) VALUES (?, ?, ?)`
-        ).bind(
-            address, default_balance, default_balance > 0 ? 1 : 0
-        ).run();
-        if (!success) {
-            return c.text(msgs.OperationFailedMsg, 500)
-        }
+        const row = await requestSenderAccess(c.env.DB, address);
+        return c.json({ status: 'ok', send_access_status: senderState(row) });
     } catch (e) {
         const message = (e as Error).message;
-        if (message && message.includes("UNIQUE")) {
-            return c.text(msgs.AlreadyRequestedMsg, 400)
-        }
-        return c.text(msgs.OperationFailedMsg, 500)
+        return c.text(message === '邮箱不存在' ? message : msgs.OperationFailedMsg, message === '邮箱不存在' ? 404 : 500)
     }
-    return c.json({ status: "ok" })
-})
+};
+api.post('/api/request_send_mail_access', requestAccess);
+// Keep the upstream misspelled endpoint for older clients.
+api.post('/api/requset_send_mail_access', requestAccess);
 
 export const sendMailToVerifyAddress = async (
     c: Context<HonoCustomType>, address: string,

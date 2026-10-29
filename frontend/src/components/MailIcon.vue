@@ -1,6 +1,10 @@
 <script setup>
 defineProps({ name: String, size: { default: 20 } });
 const paths = {
+ users: 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M17 4a4 4 0 0 1 0 7 M22 21v-2a4 4 0 0 0-3-4',
+ lock: 'M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0v4 M12 15v2',
+ history: 'M3 11a9 9 0 1 1 2 7 M3 4v7h7 M12 7v5l3 2',
+ database: 'M3 6a9 3 0 1 0 18 0 9 3 0 1 0-18 0 M3 6v12c0 4 18 4 18 0V6 M3 12c0 4 18 4 18 0',
  mail: 'M3 5h18v14H3z M3 6l9 7 9-7', menu: 'M4 6h16M4 12h16M4 18h16',
  search: 'M21 21l-5-5 M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0',
  edit: 'M4 20l4-1L20 7l-4-4L4 15v5z M14 5l4 4', inbox: 'M4 4h16l2 12v4H2v-4L4 4z M2 15h6l2 3h4l2-3h6',

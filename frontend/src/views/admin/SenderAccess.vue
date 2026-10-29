@@ -1,224 +1,42 @@
 <script setup>
-import { ref, h, onMounted, watch } from 'vue';
-import { useI18n } from 'vue-i18n'
-
-import { useGlobalState } from '../../store'
-import { api } from '../../api'
-
-const { loading } = useGlobalState()
-const message = useMessage()
-
-const { t } = useI18n({
-  messages: {
-    en: {
-      address: 'Address',
-      success: 'Success',
-      is_enabled: 'Is Enabled',
-      enable: 'Enable',
-      disable: 'Disable',
-      modify: 'Modify',
-      delete: 'Delete',
-      deleteTip: 'Are you sure to delete this?',
-      created_at: 'Created At',
-      action: 'Action',
-      itemCount: 'itemCount',
-      modalTip: 'Please input the sender balance',
-      balance: 'Balance',
-      query: 'Query',
-      ok: 'OK'
-    },
-    zh: {
-      address: '地址',
-      success: '成功',
-      is_enabled: '是否启用',
-      enable: '启用',
-      disable: '禁用',
-      modify: '修改',
-      delete: '删除',
-      deleteTip: '确定删除吗？',
-      created_at: '创建时间',
-      action: '操作',
-      itemCount: '总数',
-      modalTip: '请输入发件额度',
-      balance: '余额',
-      query: '查询',
-      ok: '确定'
-    }
-  }
-});
-const data = ref([])
-const count = ref(0)
-const page = ref(1)
-const pageSize = ref(20)
-
-const curRow = ref({})
-const showModal = ref(false)
-const senderBalance = ref(0)
-const senderEnabled = ref(false)
-
-const addressQuery = ref('')
-
-const updateData = async () => {
-  try {
-    await api.fetch(`/admin/address_sender`, {
-      method: 'POST',
-      body: JSON.stringify({
-        address: curRow.value.address,
-        address_id: curRow.value.id,
-        balance: senderBalance.value,
-        enabled: senderEnabled.value ? 1 : 0
-      })
-    });
-    showModal.value = false;
-    message.success(t("success"));
-    await fetchData()
-  } catch (error) {
-    message.error(error.message || "error");
-  }
+import { ref, computed, onMounted, watch } from 'vue';
+import { useMessage } from 'naive-ui';
+import { api } from '../../api';
+import MailIcon from '../../components/MailIcon.vue';
+const message = useMessage();
+const emit = defineEmits(['changed']);
+const rows = ref([]), count = ref(0), page = ref(1), query = ref(''), pendingOnly = ref(false), busy = ref(false), error = ref('');
+const modal = ref(false), saving = ref(false), editing = ref(null), form = ref({ address: '', balance: 100, enabled: true });
+const title = computed(() => editing.value?.requested_at ? '审核发件申请' : editing.value ? '调整发件权限' : '配置邮箱发件权限');
+const status = row => row.requested_at ? '等待审批' : !row.enabled ? '已停用' : row.balance > 0 ? '已开通' : '额度用完';
+async function load() {
+  busy.value = true; error.value = '';
+  try { const res = await api.fetch('/admin/address_sender?limit=20&offset=' + (page.value - 1) * 20 + '&address=' + encodeURIComponent(query.value.trim()) + '&pending=' + (pendingOnly.value ? '1' : '0'), { quiet: true }); rows.value = res.results || []; count.value = res.count || 0; }
+  catch (e) { error.value = e.message; }
+  finally { busy.value = false; }
 }
-
-const fetchData = async () => {
-  try {
-    addressQuery.value = addressQuery.value.trim();
-    const { results, count: addressCount } = await api.fetch(
-      `/admin/address_sender`
-      + `?limit=${pageSize.value}`
-      + `&offset=${(page.value - 1) * pageSize.value}`
-      + (addressQuery.value ? `&address=${addressQuery.value}` : '')
-    );
-    data.value = results;
-    if (addressCount > 0) {
-      count.value = addressCount;
-    }
-  } catch (error) {
-    console.log(error)
-    message.error(error.message || "error");
-  }
+function search() { page.value = 1; load(); }
+function edit(row = null) { editing.value = row; form.value = { address: row?.address || '', balance: row ? Number(row.balance) : 100, enabled: row ? Boolean(row.enabled) : true }; if (row?.requested_at) { form.value.enabled = true; if (!form.value.balance) form.value.balance = 100; } modal.value = true; }
+async function save() {
+  if (!Number.isInteger(form.value.balance) || form.value.balance < 0 || form.value.balance > 100000) { message.error('请输入 0 到 100000 的整数额度'); return; }
+  saving.value = true;
+  try { const result = await api.fetch('/admin/address_sender', { method: 'POST', quiet: true, body: JSON.stringify({ ...form.value, ...(editing.value ? { address_id: editing.value.id } : {}) }) }); message.success(result.notification_sent === false ? '权限已保存，但站内通知未能写入。用户可刷新发件状态。' : '权限已保存，已发送站内通知'); modal.value = false; await load(); emit('changed'); }
+  catch (e) { message.error(e.message); }
+  finally { saving.value = false; }
 }
-
-const columns = [
-  {
-    title: "ID",
-    key: "id"
-  },
-  {
-    title: t('address'),
-    key: "address"
-  },
-  {
-    title: t('created_at'),
-    key: "created_at"
-  },
-  {
-    title: t('balance'),
-    key: "balance"
-  },
-  {
-    title: t('is_enabled'),
-    key: "enabled",
-    render(row) {
-      return h('div', [
-        h('span', row.enabled ? t('enable') : t('disable'))
-      ])
-    }
-  },
-  {
-    title: t('action'),
-    key: 'actions',
-    render(row) {
-      return h('div', [
-        h(NButton,
-          {
-            type: 'success',
-            tertiary: true,
-            onClick: () => {
-              showModal.value = true;
-              curRow.value = row;
-              senderEnabled.value = row.enabled ? true : false;
-              senderBalance.value = row.balance;
-            }
-          },
-          { default: () => t('modify') }
-        ),
-        h(NPopconfirm,
-          {
-            onPositiveClick: async () => {
-              await api.fetch(`/admin/address_sender/${row.id}`, { method: 'DELETE' });
-              await fetchData();
-            }
-          },
-          {
-            trigger: () => h(NButton,
-              {
-                tertiary: true,
-                type: "error",
-              },
-              { default: () => t('delete') }
-            ),
-            default: () => t('deleteTip')
-          }
-        ),
-      ])
-    }
-  }
-]
-
-watch([page, pageSize], async () => {
-  await fetchData()
-})
-
-
-onMounted(async () => {
-  await fetchData()
-})
+watch([page, pendingOnly], load);
+onMounted(load);
 </script>
-
 <template>
-  <div>
-    <n-modal v-model:show="showModal" preset="dialog">
-      <p>{{ curRow.address }}</p>
-      <p>{{ t('modalTip') }}</p>
-      <n-form-item :show-label="false">
-        <n-checkbox v-model:checked="senderEnabled">
-          {{ t('enable') }}
-        </n-checkbox>
-      </n-form-item>
-      <n-form-item :show-label="false">
-        <n-input-number v-model:value="senderBalance" :min="0" :max="1000" />
-      </n-form-item>
-      <template #action>
-        <n-button :loading="loading" @click="updateData()" size="small" tertiary type="primary">
-          {{ t('ok') }}
-        </n-button>
-      </template>
-    </n-modal>
-    <n-input-group>
-      <n-input v-model:value="addressQuery" @keydown.enter="fetchData" />
-      <n-button @click="fetchData" type="primary" tertiary>
-        {{ t('query') }}
-      </n-button>
-    </n-input-group>
-    <div style="overflow: auto;">
-      <div style="display: inline-block;">
-        <n-pagination v-model:page="page" v-model:page-size="pageSize" :item-count="count" :page-sizes="[20, 50, 100]"
-          show-size-picker>
-          <template #prefix="{ itemCount }">
-            {{ t('itemCount') }}: {{ itemCount }}
-          </template>
-        </n-pagination>
-      </div>
-      <n-data-table :columns="columns" :data="data" :bordered="false" embedded />
-    </div>
+  <div class="sender-panel">
+    <div class="admin-callout"><MailIcon name="shield" /><p>用户在写信窗口申请，管理员在这里审批。开通时设置的是<b>剩余总额度</b>；关闭“允许发件”可停用该邮箱。审批会发送站内通知。</p></div>
+    <div class="admin-filterbar"><form @submit.prevent="search"><MailIcon name="search" /><input v-model="query" aria-label="搜索发件邮箱" placeholder="搜索邮箱地址" /><button class="text-button">搜索</button></form><label class="admin-filter-check"><input type="checkbox" v-model="pendingOnly" @change="page = 1" />只看待审批</label><button class="outline-button" @click="edit()">配置邮箱</button><button class="icon-button" aria-label="刷新申请列表" :disabled="busy" @click="load"><MailIcon name="refresh" /></button></div>
+    <div v-if="error" class="mail-error" role="alert">{{ error }}</div>
+    <div class="admin-table-scroll"><table class="admin-table"><thead><tr><th>邮箱地址</th><th>状态</th><th>剩余额度</th><th>申请 / 创建时间（UTC）</th><th>操作</th></tr></thead><tbody><tr v-for="row in rows" :key="row.id"><td><strong>{{ row.address }}</strong></td><td><span class="admin-status" :class="{ pending: row.requested_at, good: row.enabled && row.balance > 0 && !row.requested_at }">{{ status(row) }}</span></td><td>{{ row.balance }} 封</td><td>{{ row.requested_at || row.created_at }}</td><td><button class="text-button" @click="edit(row)">{{ row.requested_at ? '审核申请' : '调整权限' }}</button></td></tr><tr v-if="!rows.length"><td colspan="5" class="admin-empty">{{ busy ? '正在读取申请…' : pendingOnly ? '目前没有待审批的发件申请' : '暂无发件权限记录。用户可在写信窗口提交申请，也可点击“配置邮箱”直接设置。' }}</td></tr></tbody></table></div>
+    <div class="admin-pagination"><span>共 {{ count }} 个邮箱</span><button class="icon-button" aria-label="上一页" :disabled="page === 1 || busy" @click="page--"><MailIcon name="prev" /></button><span>{{ page }}</span><button class="icon-button" aria-label="下一页" :disabled="page * 20 >= count || busy" @click="page++"><MailIcon name="next" /></button></div>
+    <n-modal v-model:show="modal" preset="card" :title="title" class="mail-modal" :mask-closable="!saving" :closable="!saving"><form class="sender-form" @submit.prevent="save"><label>邮箱地址<n-input v-model:value="form.address" :disabled="!!editing || saving" placeholder="填写已经存在的邮箱地址" /></label><label>剩余发件额度<n-input-number v-model:value="form.balance" :min="0" :max="100000" :precision="0" :disabled="saving" /></label><n-checkbox v-model:checked="form.enabled" :disabled="saving">允许发件</n-checkbox><p class="muted">启用且额度大于 0 时，用户才可以发信。取消勾选并保存，将关闭发件权限。</p><div class="sender-form-actions"><n-button :disabled="saving" @click="modal = false">取消</n-button><n-button type="primary" attr-type="submit" :loading="saving">确认保存</n-button></div></form></n-modal>
   </div>
 </template>
-
 <style scoped>
-.n-pagination {
-  margin-top: 10px;
-  margin-bottom: 10px;
-}
-
-.n-data-table {
-  min-width: 700px;
-}
+.sender-form{display:grid;gap:22px}.sender-form>label{display:grid;gap:8px}.sender-form-actions{display:flex;justify-content:flex-end;gap:12px}.sender-form .muted{line-height:1.7}
 </style>

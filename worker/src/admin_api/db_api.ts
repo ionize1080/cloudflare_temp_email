@@ -52,10 +52,21 @@ CREATE TABLE IF NOT EXISTS address_sender (
     address TEXT UNIQUE,
     balance INTEGER DEFAULT 0,
     enabled INTEGER DEFAULT 1,
+    requested_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_address_sender_address ON address_sender(address);
+
+CREATE TABLE IF NOT EXISTS admin_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    actor TEXT NOT NULL,
+    method TEXT NOT NULL,
+    path TEXT NOT NULL,
+    status INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_admin_audit_created_at ON admin_audit(created_at);
 
 CREATE TABLE IF NOT EXISTS sendbox (
     id INTEGER PRIMARY KEY,
@@ -177,6 +188,10 @@ export default {
                 await c.env.DB.exec(`ALTER TABLE address ADD COLUMN source_meta TEXT;`);
                 await c.env.DB.exec(`CREATE INDEX IF NOT EXISTS idx_address_source_meta ON address(source_meta);`);
             }
+        }
+        const senderColumns = await c.env.DB.prepare('PRAGMA table_info(address_sender)').all<{ name: string }>();
+        if (!senderColumns.results.some(col => col.name === 'requested_at')) {
+            await c.env.DB.exec('ALTER TABLE address_sender ADD COLUMN requested_at DATETIME;');
         }
         if (version != CONSTANTS.DB_VERSION) {
             // remove all \r and \n characters from the query string

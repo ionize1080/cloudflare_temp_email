@@ -82,6 +82,8 @@ const { t } = useI18n({
 });
 
 const cleanup = async (cleanType, cleanDays) => {
+    const warning = `此操作会永久清理数据（${cleanDays} 天前；0 表示全部），无法在网页内撤销。请输入“清理”确认：`;
+    if (window.prompt(warning) !== '清理') return;
     try {
         await api.fetch('/admin/cleanup', {
             method: 'POST',

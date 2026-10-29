@@ -10,7 +10,7 @@ import Footer from './views/Footer.vue';
 import { api } from './api'
 import { useRoute } from 'vue-router'
 const route = useRoute();
-const isMailWorkspace = computed(() => route.path === '/' || /^\/(zh|en)\/?$/.test(route.path));
+const isMailWorkspace = computed(() => route.path === '/' || /^\/(zh|en)\/?$/.test(route.path) || /^\/(?:zh\/|en\/)?admin\/?$/.test(route.path));
 const themeOverrides = { common: { primaryColor: '#0b57d0', primaryColorHover: '#1765d9', primaryColorPressed: '#084bb6', borderRadius: '8px' } };
 
 const {

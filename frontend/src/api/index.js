@@ -118,16 +118,18 @@ const getOpenSettings = async (message, notification) => {
     }
 }
 
-const getSettings = async () => {
+const getSettings = async (options = {}) => {
     try {
         if (typeof jwt.value != 'string' || jwt.value.trim() === '' || jwt.value === 'undefined') {
             return "";
         }
-        const res = await apiFetch("/api/settings");;
+        const res = await apiFetch("/api/settings", options);
         settings.value = {
             address: res["address"],
             auto_reply: res["auto_reply"],
             send_balance: res["send_balance"],
+            send_access_status: res["send_access_status"] || (res["send_balance"] > 0 ? 'approved' : 'not_requested'),
+            send_requested_at: res["send_requested_at"] || null,
         };
     } finally {
         settings.value.fetched = true;

@@ -8,6 +8,7 @@ import auto_reply from './auto_reply'
 import webhook_settings from './webhook_settings';
 import s3_attachment from './s3_attachment';
 import address_auth from './address_auth';
+import { senderState } from '../../../shared/sender-access.mjs';
 
 export const api = new Hono<HonoCustomType>()
 
@@ -95,13 +96,16 @@ api.get('/api/settings', async (c) => {
     await updateAddressUpdatedAt(c, address);
 
     const no_limit_roles = getSplitStringListValue(c.env.NO_LIMIT_SEND_ROLE);
-    const is_no_limit_send_balance = user_role && no_limit_roles.includes(user_role);
-    const balance = is_no_limit_send_balance ? 99999 : await c.env.DB.prepare(
-        `SELECT balance FROM address_sender where address = ? and enabled = 1`
-    ).bind(address).first("balance");
+    const noLimitAddresses = await getJsonSetting(c, CONSTANTS.NO_LIMIT_SEND_ADDRESS_LIST_KEY) || [];
+    const is_no_limit_send_balance = Boolean((user_role && no_limit_roles.includes(user_role)) || noLimitAddresses.includes(address));
+    const sender = await c.env.DB.prepare('SELECT balance, enabled, requested_at FROM address_sender WHERE address = ?')
+        .bind(address).first<{ balance: number, enabled: number, requested_at: string | null }>();
+    const balance = is_no_limit_send_balance ? 99999 : sender?.enabled ? sender.balance : 0;
     return c.json({
         address: address,
         send_balance: balance || 0,
+        send_access_status: senderState(sender, is_no_limit_send_balance),
+        send_requested_at: sender?.requested_at || null,
     });
 })
 

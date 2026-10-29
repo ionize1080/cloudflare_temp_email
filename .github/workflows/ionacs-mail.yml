@@ -24,7 +24,7 @@ jobs:
           version: 10.10.0
       - run: pnpm --dir worker install --frozen-lockfile
       - run: pnpm --dir frontend install --frozen-lockfile
-      - run: node --test checks/security.test.mjs
+      - run: node --test checks/*.test.mjs
       - run: pnpm --dir worker lint
       - run: pnpm --dir worker exec wrangler deploy --config wrangler.production.jsonc --dry-run --outdir dist --minify
       - run: pnpm --dir frontend build:pages

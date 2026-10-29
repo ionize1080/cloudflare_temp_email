@@ -31,7 +31,9 @@ const app = new Hono<HonoCustomType>()
 //cors
 app.use('/*', async (c, next) => {
     try {
-        if (!await requireAccess(c.req.raw)) { c.res = c.text('Cloudflare Access authentication required', 401); return; }
+        const identity = await requireAccess(c.req.raw);
+        if (!identity) { c.res = c.text('Cloudflare Access authentication required', 401); return; }
+        c.set('accessEmail', typeof identity.email === 'string' ? identity.email.slice(0, 254) : 'Access service');
         if (rejectCrossOrigin(c.req.raw)) { c.res = c.text('Forbidden origin', 403); return; }
         await next();
     } finally { c.res = securityHeaders(c.res, { html: c.res.headers.get('content-type')?.includes('text/html') }); }
@@ -73,6 +75,8 @@ app.use('/*', async (c, next) => {
 	if (
 		c.req.path.startsWith("/api/new_address")
 		|| c.req.path.startsWith("/api/send_mail")
+		|| c.req.path.startsWith("/api/request_send_mail_access")
+		|| c.req.path.startsWith("/api/requset_send_mail_access")
 		|| c.req.path.startsWith("/external/api/send_mail")
 		|| c.req.path.startsWith("/user_api/register")
 		|| c.req.path.startsWith("/user_api/verify_code")
@@ -268,6 +272,17 @@ app.use('/admin/*', async (c, next) => {
 	return c.text(msgs.NeedAdminPasswordMsg, 401)
 });
 
+
+// Runs only after successful admin authorization. Never store bodies, passwords or tokens.
+app.use('/admin/*', async (c, next) => {
+    await next();
+    if (['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) && !c.req.path.startsWith('/admin/show_password/')) return;
+    c.executionCtx.waitUntil(c.env.DB.batch([
+        c.env.DB.prepare('INSERT INTO admin_audit (actor, method, path, status) VALUES (?, ?, ?, ?)')
+            .bind(c.get('accessEmail'), c.req.method, c.req.path.slice(0, 300), c.res.status),
+        c.env.DB.prepare('DELETE FROM admin_audit WHERE id NOT IN (SELECT id FROM admin_audit ORDER BY id DESC LIMIT 1000)'),
+    ]).catch(() => console.error(JSON.stringify({ event: 'admin_audit_write_failed' }))));
+});
 
 app.route('/', commonApi)
 app.route('/', mailsApi)
