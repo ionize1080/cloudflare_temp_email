@@ -55,3 +55,5 @@ Successful submission archives MIME automatically. Disable the client's attempt 
 Validation must not send real external mail unless the user explicitly requests it. Use a fake provider for positive submission tests and an isolated no-send-permission fixture for public authentication and relay-denial tests.
 
 The deployment also exposes an implicit-TLS SMTP fallback on 2465 (`SMTP_ALT_PORT`) for networks that cannot connect to 465. Both listeners share authentication/connection limits and the same certificate. Set the alternate port in both the Worker and gateway environment; no plaintext/STARTTLS listener is provided.
+
+Submission refusals include a specific, allowlisted SMTP explanation (sender mismatch, blocked recipient, missing To, revoked permission, insufficient quota, or provider rejection). The systemd journal records only the fixed reason category and HTTP status. Unknown responses, including Access error pages, remain temporary 451 failures; their contents are never exposed or logged. Check the reason before changing account permissions or resetting client passwords.

@@ -1,5 +1,6 @@
 """Authenticated implicit-TLS SMTP submission, using the existing private API."""
 import base64
+import logging
 import time
 from collections import OrderedDict, defaultdict
 
@@ -10,6 +11,36 @@ from zope.interface import implementer
 
 MAX_MESSAGE = 1024 * 1024
 MAX_RECIPIENTS = 20
+
+# Only known, fixed API errors may reach a client or the journal. Never echo
+# provider responses, message contents, credentials, or arbitrary error pages.
+API_ERRORS = {
+    'Invalid message, sender or recipients': ('invalid_message', 554, b'5.6.0 Invalid message or envelope recipients'),
+    'Invalid MIME encoding': ('invalid_mime', 554, b'5.6.0 Invalid MIME encoding'),
+    'From must match the authenticated mailbox': ('sender_mismatch', 553, b'5.7.1 From and Sender headers must match the SMTP login'),
+    'Recipient is blocked': ('recipient_blocked', 550, b'5.7.1 Recipient blocked by administrator'),
+    'Include at least one envelope recipient in the To header': ('missing_to', 554, b'5.6.0 A To recipient must match an envelope recipient'),
+    'Sending permission revoked': ('send_permission', 550, b'5.7.1 Sending permission is not enabled; request administrator approval'),
+    'Sending permission or remaining quota unavailable': ('send_quota', 550, b'5.7.1 Sending permission or quota insufficient for all recipients'),
+    'This submission was rejected; correct the message before retrying': ('previous_rejection', 554, b'5.6.0 Message was rejected; correct it before retrying'),
+    'Outgoing provider rejected this message': ('provider_rejected', 554, b'5.6.0 Outgoing provider rejected this message; contact administrator'),
+    'Invalid sender domain': ('sender_domain', 553, b'5.7.1 Sender domain is not enabled'),
+    'IMAP permission revoked or session expired': ('session_expired', 535, b'5.7.8 Client permission revoked or session expired; reconnect'),
+    'IMAP authentication required': ('session_invalid', 535, b'5.7.8 SMTP session invalid; reconnect'),
+    'Previous delivery outcome requires administrator review': ('delivery_review', 451, b'4.3.0 Previous delivery outcome requires administrator review'),
+    'Submission is processing; retry later': ('processing', 451, b'4.3.0 Submission is processing; retry the same message later'),
+}
+
+
+def submission_error(response):
+    status = response.status_code
+    reason = API_ERRORS.get(response.text.strip())
+    if not reason:
+        if status == 413: reason = ('message_size', 552, b'5.3.4 Message exceeds 1 MiB')
+        elif status == 429: reason = ('rate_limit', 451, b'4.7.0 Sending rate limit reached; retry later')
+        else: reason = ('submission_unavailable', 451, b'4.3.0 Submission unavailable; retry the same message later')
+    logging.getLogger(__name__).warning('SMTP submission refused: reason=%s http_status=%s', reason[0], status)
+    return smtp.SMTPServerError(reason[1], reason[2])
 
 
 @implementer(smtp.IMessage)
@@ -38,10 +69,7 @@ class Message:
             except Exception:
                 raise smtp.SMTPServerError(451, b'Submission unavailable; retry later') from None
             if response.status_code == 200: return
-            if response.status_code == 413: raise smtp.SMTPServerError(552, b'Message too large')
-            if response.status_code in (400, 401, 403):
-                raise smtp.SMTPServerError(550, b'Sending denied; check sender, recipients, permission and quota')
-            raise smtp.SMTPServerError(451, b'Submission unavailable; retry the same message later')
+            raise submission_error(response)
         return threads.deferToThread(work)
 
     def connectionLost(self): self.lines.clear()

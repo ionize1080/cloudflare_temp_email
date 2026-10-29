@@ -9,18 +9,18 @@ from cryptography.x509.oid import NameOID
 from twisted.cred.error import UnauthorizedLogin
 from twisted.internet import defer, reactor, ssl as tssl
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from imap_gateway.smtp_server import SmtpFactory
+from imap_gateway.smtp_server import SmtpFactory, submission_error
 from imap_gateway.server import Checker, sent_bytes
 
 class Gateway:
-    def __init__(self): self.token='test'; self.client=self; self.messages=[]; self.status=200; self.revoked=False
+    def __init__(self): self.token='test'; self.client=self; self.messages=[]; self.status=200; self.revoked=False; self.error='Sending permission revoked'
     def close(self): pass
     def request(self,*args,**kwargs):
         if self.revoked: raise UnauthorizedLogin()
         return {'address':'alice@example.com'}
     def post(self,path,**kwargs):
         self.messages.append(kwargs['json'])
-        return type('Result',(),{'status_code':401 if self.revoked else self.status})()
+        return type('Result',(),{'status_code':401 if self.revoked else self.status, 'text':self.error})()
 
 class FakeChecker(Checker):
     def __init__(self): self.gateways=[]
@@ -61,8 +61,22 @@ class Tests(unittest.TestCase):
         c=self.client(); g=self.checker.gateways[-1]
         for status,expected in ((403,550),(503,451)):
             g.status=status
+            g.error='Sending permission revoked' if status==403 else 'Temporary upstream error'
             with self.assertRaises(smtplib.SMTPDataError) as e:c.sendmail('alice@example.com',['bob@example.net'],self.message())
             self.assertEqual(e.exception.smtp_code,expected)
+    def test_precise_safe_errors_without_upstream_content_leaks(self):
+        cases=[(403,'From must match the authenticated mailbox',553,b'From and Sender'),
+               (403,'Sending permission revoked',550,b'administrator approval'),
+               (403,'Sending permission or remaining quota unavailable',550,b'quota insufficient'),
+               (400,'Include at least one envelope recipient in the To header',554,b'To recipient'),
+               (401,'IMAP permission revoked or session expired',535,b'reconnect'),
+               (403,'<html>secret token and private message</html>',451,b'Submission unavailable'),
+               (413,'Request too large',552,b'1 MiB')]
+        for status,text,code,detail in cases:
+            with self.assertLogs('imap_gateway.smtp_server',level='WARNING') as logs:
+                error=submission_error(type('Result',(),{'status_code':status,'text':text})())
+            self.assertEqual(error.code,code); self.assertIn(detail,error.resp)
+            self.assertNotIn('secret',str(logs.output)); self.assertNotIn(b'secret',error.resp)
     def test_revoked_session_cannot_submit(self):
         c=self.client(); self.checker.gateways[-1].revoked=True
         with self.assertRaises(smtplib.SMTPSenderRefused):c.sendmail('alice@example.com',['bob@example.net'],self.message())
