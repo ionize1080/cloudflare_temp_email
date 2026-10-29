@@ -65,7 +65,11 @@ class Tests(unittest.TestCase):
             with self.assertRaises(smtplib.SMTPDataError) as e:c.sendmail('alice@example.com',['bob@example.net'],self.message())
             self.assertEqual(e.exception.smtp_code,expected)
     def test_precise_safe_errors_without_upstream_content_leaks(self):
-        cases=[(403,'From must match the authenticated mailbox',553,b'From and Sender'),
+        cases=[(403,'From must match the authenticated mailbox',550,b'From and Sender'),
+               (403,'Exactly one From header is required',550,b'Exactly one From'),
+               (403,'From address must match the authenticated mailbox',550,b'From address'),
+               (403,'Sender header must match the authenticated mailbox',550,b'Sender header'),
+               (403,'Resent headers are not supported; compose a new message',550,b'compose a new message'),
                (403,'Sending permission revoked',550,b'administrator approval'),
                (403,'Sending permission or remaining quota unavailable',550,b'quota insufficient'),
                (400,'Include at least one envelope recipient in the To header',554,b'To recipient'),

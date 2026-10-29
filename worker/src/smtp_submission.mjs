@@ -17,10 +17,13 @@ export async function prepareSubmission(identity, input, blocked = []) {
   if (raw.length > MAX_MESSAGE) throw new SmtpError('Message exceeds 1 MiB', 413);
   const mail = await PostalMime.parse(raw, { attachmentEncoding: 'base64', maxNestingDepth: 20, maxHeadersSize: 32768 });
   const fromHeaders = mail.headers.filter(h => h.key === 'from');
-  if (fromHeaders.length !== 1 || addressParser(fromHeaders[0].value, { flatten: true }).length !== 1
-    || mail.from?.address?.toLowerCase() !== identity.address
-    || (mail.sender && mail.sender.address?.toLowerCase() !== identity.address)
-    || mail.headers.some(h => h.key.startsWith('resent-'))) throw new SmtpError('From must match the authenticated mailbox', 403);
+  if (fromHeaders.length !== 1) throw new SmtpError('Exactly one From header is required', 403);
+  if (addressParser(fromHeaders[0].value, { flatten: true }).length !== 1) throw new SmtpError('From header must contain one mailbox', 403);
+  if (mail.from?.address?.toLowerCase() !== identity.address) throw new SmtpError('From address must match the authenticated mailbox', 403);
+  // Sender describes the transmitting agent (RFC 5322 section 3.6.2), which
+  // clients may set independently of From. We rebuild the provider request
+  // using the authenticated mailbox and never forward client Sender headers.
+  if (mail.headers.some(h => h.key.startsWith('resent-'))) throw new SmtpError('Resent headers are not supported; compose a new message', 403);
   const recipients = [...new Set(input.recipients.map(r => r.toLowerCase()))];
   if (recipients.some(r => blocked.some(b => typeof b === 'string' && r.includes(b.toLowerCase())))) throw new SmtpError('Recipient is blocked', 403);
   const to = [...new Set(flatten(mail.to))].filter(r => recipients.includes(r));

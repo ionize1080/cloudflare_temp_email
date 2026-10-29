@@ -17,7 +17,12 @@ MAX_RECIPIENTS = 20
 API_ERRORS = {
     'Invalid message, sender or recipients': ('invalid_message', 554, b'5.6.0 Invalid message or envelope recipients'),
     'Invalid MIME encoding': ('invalid_mime', 554, b'5.6.0 Invalid MIME encoding'),
-    'From must match the authenticated mailbox': ('sender_mismatch', 553, b'5.7.1 From and Sender headers must match the SMTP login'),
+    'From must match the authenticated mailbox': ('sender_mismatch', 550, b'5.7.1 From and Sender headers must match the SMTP login'),
+    'Exactly one From header is required': ('from_header_count', 550, b'5.7.1 Exactly one From header is required'),
+    'From header must contain one mailbox': ('from_mailbox_count', 550, b'5.7.1 From header must contain one mailbox'),
+    'From address must match the authenticated mailbox': ('from_address', 550, b'5.7.1 From address must match the SMTP login'),
+    'Sender header must match the authenticated mailbox': ('sender_header', 550, b'5.7.1 Sender header must match the SMTP login'),
+    'Resent headers are not supported; compose a new message': ('resent_headers', 550, b'5.7.1 Resent headers unsupported; compose a new message'),
     'Recipient is blocked': ('recipient_blocked', 550, b'5.7.1 Recipient blocked by administrator'),
     'Include at least one envelope recipient in the To header': ('missing_to', 554, b'5.6.0 A To recipient must match an envelope recipient'),
     'Sending permission revoked': ('send_permission', 550, b'5.7.1 Sending permission is not enabled; request administrator approval'),
