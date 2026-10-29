@@ -2,11 +2,15 @@
 import http from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
+import { hashPassword, verifyPassword } from '../shared/passwords.mjs';
+import { requestImap, reviewImap, createImapPassword, imapState } from '../shared/imap-access.mjs';
 import { requestSenderAccess, updateSenderAccess, senderState } from '../shared/sender-access.mjs';
 const sql = new DatabaseSync(':memory:');
 sql.exec(readFileSync(new URL('../db/schema.sql', import.meta.url), 'utf8'));
 sql.exec("INSERT INTO address(name) VALUES ('alex@ionacs.com')");
-const db = { prepare(query) { const s = sql.prepare(query); let values = []; return { bind(...args) { values = args; return this; }, async first() { return s.get(...values) || null; }, async run() { s.run(...values); return { success: true }; } }; } };
+const db = { async batch(statements) { sql.exec('BEGIN'); try { const result = []; for (const s of statements) result.push(await s.run()); sql.exec('COMMIT'); return result; } catch (e) { sql.exec('ROLLBACK'); throw e; } }, prepare(query) { const s = sql.prepare(query); let values = []; return { bind(...args) { values = args; return this; }, async first() { return s.get(...values) || null; }, async all() { return { results: s.all(...values) }; }, async run() { s.run(...values); return { success: true }; } }; } };
+let activeAddress = 'alex@ionacs.com';
+
 let audit = [];
 const day = new Date().toISOString().slice(0, 10);
 const samples = [
@@ -27,10 +31,18 @@ http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { res.end(); return; }
   const url = new URL(req.url, 'http://localhost:8788');
   const json = (body, code = 200) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(body)); };
-  if (url.pathname === '/open_api/settings') return json({ title: 'IONACS Mail', domains: ['ionacs.com'], defaultDomains: ['ionacs.com'], enableUserDeleteEmail: true, enableUserCreateEmail: false });
+  if (url.pathname === '/open_api/settings') return json({ title: 'IONACS Mail', domains: ['ionacs.com'], defaultDomains: ['ionacs.com'], enableUserDeleteEmail: true, enableUserCreateEmail: true, enableAddressPassword: true });
   if (url.pathname === '/user_api/open_settings') return json({ enable: false });
+  const body = async () => { let raw = ''; for await (const chunk of req) raw += chunk; return JSON.parse(raw || '{}'); };
+  if (url.pathname === '/api/new_address') { const input = await body(); try { const hashed = await hashPassword(input.password); const address = input.name + '@' + input.domain; sql.prepare('INSERT INTO address(name, password) VALUES(?,?)').run(address, hashed); activeAddress = address; return json({ jwt: 'preview-only', address }); } catch (e) { return json({ error: e.message }, 400); } }
+  if (url.pathname === '/api/address_login') { const input = await body(); const row = sql.prepare('SELECT * FROM address WHERE name = ?').get(input.email); if (!await verifyPassword(input.password, row?.password)) return json({ error: '账号或密码错误' }, 401); activeAddress = row.name; return json({ jwt: 'preview-only', address: row.name }); }
   if (url.pathname.startsWith('/admin/')) {
     if (req.headers['x-admin-auth'] !== 'preview-admin') return json({ error: '本地管理员密码为 preview-admin' }, 401);
+    if (url.pathname === '/admin/imap') {
+      if (req.method === 'POST') { try { await reviewImap(db, await body()); return json({ success: true }); } catch (e) { return json({ error: e.message }, 400); } }
+      const rows = sql.prepare('SELECT a.id AS address_id, a.name AS address, i.*, (SELECT COUNT(*) FROM imap_passwords p WHERE p.address_id = a.id) AS clients FROM address a LEFT JOIN imap_access i ON a.id = i.address_id').all().map(row => ({ ...row, address_id: sql.prepare('SELECT id FROM address WHERE name = ?').get(row.address).id })).filter(row => (!url.searchParams.get('q') || row.address.includes(url.searchParams.get('q'))) && (url.searchParams.get('pending') !== '1' || row.requested_at));
+      return json({ results: rows, count: rows.length });
+    }
     if (url.pathname === '/admin/overview') return json({ counts: { addresses: 1, users: 0, received: messages.length, sent: sent.length, pending: sql.prepare('SELECT COUNT(*) AS n FROM address_sender WHERE requested_at IS NOT NULL').get().n, senders: sql.prepare('SELECT COUNT(*) AS n FROM address_sender WHERE enabled = 1 AND balance > 0').get().n }, identity: 'admin@example.com', canonicalOrigin: 'https://mail.ionacs.com', domains: [{ domain: 'ionacs.com', outboundConfigured: true }], security: { accessVerified: true, adminCheckEnabled: true, encryptedAdminSecret: true, adminCredentialConfigured: true, rateLimitEnabled: true, jwtConfigured: true, auditRetention: 1000 } });
     if (url.pathname === '/admin/audit') return json({ results: audit, count: audit.length });
     if (url.pathname === '/admin/address_sender' && req.method === 'POST') {
@@ -46,7 +58,13 @@ http.createServer(async (req, res) => {
     return json({});
   }
   if (req.headers.authorization !== 'Bearer preview-only') return json({ error: '请输入测试凭据 preview-only' }, 401);
-  if (url.pathname === '/api/settings') { const row = sql.prepare('SELECT * FROM address_sender WHERE address = ?').get('alex@ionacs.com'); return json({ address: 'alex@ionacs.com', send_balance: row?.enabled ? row.balance : 0, send_access_status: senderState(row), send_requested_at: row?.requested_at }); }
+  const current = sql.prepare('SELECT id FROM address WHERE name = ?').get(activeAddress);
+  if (url.pathname === '/api/imap/settings') return json({ state: imapState(await db.prepare('SELECT * FROM imap_access WHERE address_id = ?').bind(current.id).first()), passwords: sql.prepare('SELECT id,label,created_at,last_used_at FROM imap_passwords WHERE address_id = ?').all(current.id), host: 'imap-test.example.com', port: 993, available: true });
+  if (url.pathname === '/api/imap/request') return json({ state: imapState(await requestImap(db, current.id)) });
+  if (url.pathname === '/api/imap/passwords' && req.method === 'POST') { try { return json(await createImapPassword(db, current.id, (await body()).label)); } catch (e) { return json({ error: e.message }, 400); } }
+  if (url.pathname.startsWith('/api/imap/passwords/') && req.method === 'DELETE') { sql.prepare('DELETE FROM imap_passwords WHERE id = ? AND address_id = ?').run(url.pathname.split('/').pop(), current.id); return json({ success: true }); }
+  if (url.pathname === '/api/address_change_password') { try { sql.prepare('UPDATE address SET password = ? WHERE id = ?').run(await hashPassword((await body()).new_password), current.id); sql.prepare('DELETE FROM imap_passwords WHERE address_id = ?').run(current.id); return json({ success: true }); } catch (e) { return json({ error: e.message }, 400); } }
+  if (url.pathname === '/api/settings') { const row = sql.prepare('SELECT * FROM address_sender WHERE address = ?').get('alex@ionacs.com'); return json({ address: activeAddress, send_balance: row?.enabled ? row.balance : 0, send_access_status: senderState(row), send_requested_at: row?.requested_at }); }
   if (url.pathname === '/api/request_send_mail_access') { const row = await requestSenderAccess(db, 'alex@ionacs.com'); return json({ status: 'ok', send_access_status: senderState(row) }); }
   if (url.pathname === '/api/mails' || url.pathname === '/api/sendbox') {
     const all = (url.pathname.endsWith('sendbox') ? sent : messages).filter(r => !url.searchParams.get('q') || r.raw.includes(url.searchParams.get('q')));

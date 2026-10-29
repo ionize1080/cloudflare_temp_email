@@ -3,6 +3,7 @@ import { cors } from 'hono/cors';
 import { jwt } from 'hono/jwt'
 import { Jwt } from 'hono/utils/jwt'
 
+import { mailboxImapApi, adminImapApi, bridgeImapApi } from './imap_api';
 import { api as commonApi } from './commom_api';
 import { api as mailsApi } from './mails_api'
 import { api as userApi } from './user_api';
@@ -16,10 +17,11 @@ import { scheduled } from './scheduled';
 import { getAdminPasswords, getPasswords, getBooleanValue, getStringArray } from './utils';
 import { checkAccessControl } from './ip_blacklist';
 import { bodyLimit } from 'hono/body-limit';
-import { requireAccess, rejectCrossOrigin, isAllowedOrigin, equalSecret, securityHeaders } from '../../shared/security.mjs';
+import { requireAccess, rejectCrossOrigin, isAllowedOrigin, equalSecret, securityHeaders, IMAP_ACCESS_AUDIENCE } from '../../shared/security.mjs';
 
 const API_PATHS = [
 	"/api/",
+    "/imap_api/",
 	"/open_api/",
 	"/user_api/",
 	"/admin/",
@@ -31,7 +33,7 @@ const app = new Hono<HonoCustomType>()
 //cors
 app.use('/*', async (c, next) => {
     try {
-        const identity = await requireAccess(c.req.raw);
+        const identity = await requireAccess(c.req.raw, c.req.path.startsWith('/imap_api/') ? IMAP_ACCESS_AUDIENCE : undefined);
         if (!identity) { c.res = c.text('Cloudflare Access authentication required', 401); return; }
         c.set('accessEmail', typeof identity.email === 'string' ? identity.email.slice(0, 254) : 'Access service');
         if (rejectCrossOrigin(c.req.raw)) { c.res = c.text('Forbidden origin', 403); return; }
@@ -82,7 +84,10 @@ app.use('/*', async (c, next) => {
 		|| c.req.path.startsWith("/user_api/verify_code")
 		|| c.req.path.startsWith("/api/address_login")
 		|| c.req.path.startsWith("/user_api/login")
-		|| c.req.path.startsWith("/admin/")
+		|| c.req.path.startsWith("/api/imap/")
+        || c.req.path.startsWith("/api/address_change_password")
+        || c.req.path === "/imap_api/authenticate"
+        || c.req.path.startsWith("/admin/")
 	) {
 		const reqIp = c.req.raw.headers.get("cf-connecting-ip")
 		if (reqIp && c.env.RATE_LIMITER) {
@@ -284,6 +289,9 @@ app.use('/admin/*', async (c, next) => {
     ]).catch(() => console.error(JSON.stringify({ event: 'admin_audit_write_failed' }))));
 });
 
+app.route('/', mailboxImapApi);
+app.route('/', adminImapApi);
+app.route('/', bridgeImapApi);
 app.route('/', commonApi)
 app.route('/', mailsApi)
 app.route('/', userApi)

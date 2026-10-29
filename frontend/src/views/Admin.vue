@@ -17,6 +17,7 @@ const navGroups = [
   { label: '工作空间', items: [
     ['overview', '管理概览', 'inbox', '邮箱运行概况与待办'],
     ['senderAccess', '发件审批', 'send', '审批申请、调整发送额度'],
+    ['imapAccess', 'IMAP 审批', 'link', '第三方邮件客户端权限与撤销'],
     ['account', '邮箱管理', 'mail', '查询邮箱与管理地址'],
     ['account_create', '创建邮箱', 'edit', '为团队建立新的邮箱'],
     ['user_management', '用户管理', 'users', '账号、角色与地址绑定'],
@@ -47,7 +48,7 @@ const navGroups = [
 ];
 const allItems = navGroups.flatMap(group => group.items);
 const componentPaths = {
-  senderAccess: 'SenderAccess', account: 'Account', account_create: 'CreateAccount',
+  imapAccess: 'ImapAccess', senderAccess: 'SenderAccess', account: 'Account', account_create: 'CreateAccount',
   user_management: 'UserManagement', mails: 'Mails', sendBox: 'SendBox', sendMail: 'SendMail',
   unknow: 'MailsUnknow', user_settings: 'UserSettings', account_settings: 'AccountSettings',
   ipBlacklistSettings: 'IpBlacklistSettings', userOauth2Settings: 'UserOauth2Settings',

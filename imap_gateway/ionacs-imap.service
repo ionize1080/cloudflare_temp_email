@@ -1,0 +1,31 @@
+[Unit]
+Description=IONACS TLS IMAP gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ionacs-imap
+Group=ionacs-imap
+WorkingDirectory=/opt/ionacs-imap
+EnvironmentFile=/etc/ionacs-imap/gateway.env
+ExecStart=/opt/ionacs-imap/venv/bin/python /opt/ionacs-imap/server.py
+Restart=on-failure
+RestartSec=5
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=yes
+MemoryMax=350M
+TasksMax=48
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -20,6 +20,18 @@ Audit history records the verified Access identity, method, path (without query 
 
 Mailbox deletion now removes related records before the address in a single D1 transaction, preventing orphaned mail/permission records and partial cleanup. No production deletions were used for validation. Immediate maintenance cleanup requires typing an explicit confirmation.
 
+## Password accounts and IMAP clients
+
+The mailbox login now accepts a full email address and password. New mailboxes choose a 12–128 character password during registration; an existing mailbox session can set or change its password in Mailbox & Account. Existing credential login remains available for migration. Passwords use individual random salts and PBKDF2-SHA256 (100,000 iterations, the Workers Web Crypto limit). Legacy password hashes are upgraded on successful login. Changing a mailbox password revokes its IMAP client passwords; it does not invalidate already-issued web mailbox JWTs or the separate Cloudflare Access session.
+
+Users request IMAP access under Mailbox & Account → Third-party clients. Administrators review requests at `/admin?tab=imapAccess`; approval never happens automatically. Approved users can create up to five named client passwords, shown once and stored only as hashes. The website password cannot authenticate IMAP. Revoking a client password, disabling IMAP, or deleting its mailbox invalidates the corresponding client sessions; data requests recheck authorization and idle connections are checked every 60 seconds. Reapproval does not restore revoked passwords.
+
+The TLS IMAP gateway runs separately from Workers. Its randomized hostname is configured in the `IMAP_HOST` Worker secret and disclosed in the approved user's account panel. Clients use port 993, SSL/TLS, their complete mailbox address and a generated client password. The selected deployment uses DNS-only routing, so its DNS record reveals the server address. Random naming reduces casual discovery but is not an authentication mechanism. The website continues through the original Cloudflare Access application.
+
+The gateway supports INBOX and SENT, MIME messages and attachments, search, stable UIDs, IDLE polling, flags, and expunging messages marked Deleted when mailbox deletion is enabled. Expunge permanently removes the corresponding webmail message. Webmail's existing local read/star indicators are separate from IMAP flags. Custom folders, uploading/copying messages and SMTP submission are not implemented; send mail from the website. Metadata snapshots are limited to 100,000 messages per folder and a gateway API response to 16 MiB. See [gateway operations](imap_gateway/README.md).
+
+`db/2026-10-29-imap.sql` advances the schema to v0.0.7 with additive permission, credential and UID/flag tables and synchronization triggers. It is repeatable and preserves existing mail. Apply it before deploying the new API. The `/imap_api/*` namespace has a separate Access Service Auth application/audience plus a gateway secret; its signed IMAP sessions use a separate signing key and cannot grant webmail/admin access.
+
 ## Security boundary
 
 The existing TP-Auth Access application protects the canonical domain. Both Pages middleware and the API Worker verify the RS256 signature, fixed issuer, fixed audience, expiry and not-before claim. Missing/invalid assertions fail closed, including on workers.dev. Pages forwards API requests over the `BACKEND` service binding. Public email delivery uses the Worker's separate `email()` handler and remains unaffected. Programmatic HTTP clients now need an authorized Access assertion in addition to their existing mailbox/admin credentials.
@@ -36,6 +48,8 @@ Use Node 22 and pnpm 10.10.0 and a modern browser with ES2022 support. Productio
 pnpm --dir worker install --frozen-lockfile
 pnpm --dir frontend install --frozen-lockfile
 node --test checks/*.test.mjs
+python -m pip install -r imap_gateway/requirements.txt
+python checks/imap_protocol_test.py
 pnpm --dir worker lint
 pnpm --dir worker exec wrangler deploy --config wrangler.production.jsonc --dry-run --outdir dist --minify
 pnpm --dir frontend build:pages
@@ -53,3 +67,5 @@ The additive October 2026 database migration adds `raw_mails.metadata` and `addr
 The security tests exercise signed JWTs, expiry, wrong issuer/audience, unknown keys, signature forgery, algorithm substitution, cross-origin writes, admin comparisons and response headers. Local UI fixtures in `checks/preview-api.mjs` support login, search, reading and simulated delivery success/failure without sending real mail; they are never deployed. Production smoke tests should be read-only unless actual email delivery is explicitly requested.
 
 Production dependencies were refreshed within compatible versions. The frontend production audit has no known findings. The backend high/critical findings were fixed; residual advisories concern the older optional passkey stack and a transitive UUID API. These are documented limitations, not a claim of complete security certification. A future passkey major-version migration should include credential compatibility testing.
+
+IMAP verification covers permission ownership, request idempotency, credential revocation, password migration, UID stability, MIME retrieval and real TLS client commands. A synthetic isolated mailbox was also used for the deployed gateway check and removed afterwards; no external message delivery was used. Deployment checks are not a claim of certification with every desktop/mobile client. CI tests the gateway, but deploying its server files and rotating its Access service token are separate operator tasks.

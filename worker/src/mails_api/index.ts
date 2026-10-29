@@ -9,6 +9,7 @@ import webhook_settings from './webhook_settings';
 import s3_attachment from './s3_attachment';
 import address_auth from './address_auth';
 import { senderState } from '../../../shared/sender-access.mjs';
+import { validatePassword } from '../../../shared/passwords.mjs';
 
 export const api = new Hono<HonoCustomType>()
 
@@ -120,7 +121,11 @@ api.post('/api/new_address', async (c) => {
         return c.text(msgs.NewAddressDisabledMsg, 403)
     }
     // eslint-disable-next-line prefer-const
-    let { name, domain, cf_token } = await c.req.json();
+    let { name, domain, cf_token, password } = await c.req.json();
+    if (getBooleanValue(c.env.ENABLE_ADDRESS_PASSWORD)) {
+        try { validatePassword(password); } catch (error) { return c.text((error as Error).message, 400); }
+    }
+    if ((name && typeof name !== 'string') || (domain && typeof domain !== 'string')) return c.text('无效的邮箱地址', 400);
     // check cf turnstile
     try {
         await checkCfTurnstile(c, cf_token);
@@ -157,7 +162,7 @@ api.post('/api/new_address', async (c) => {
             enablePrefix: true,
             checkLengthByConfig: true,
             addressPrefix,
-            sourceMeta
+            sourceMeta, password
         });
         return c.json(res);
     } catch (e) {

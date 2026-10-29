@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateAccessToken, requireAccess, rejectCrossOrigin, equalSecret, securityHeaders, ACCESS_ISSUER, ACCESS_AUDIENCE } from '../shared/security.mjs';
+import { validateAccessToken, requireAccess, rejectCrossOrigin, equalSecret, securityHeaders, ACCESS_ISSUER, ACCESS_AUDIENCE, IMAP_ACCESS_AUDIENCE } from '../shared/security.mjs';
 const pair = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
 const jwk = { ...await crypto.subtle.exportKey('jwk', pair.publicKey), kid: 'test-key' };
 const encode = data => Buffer.from(typeof data === 'string' ? data : JSON.stringify(data)).toString('base64url');
@@ -36,4 +36,17 @@ test('sensitive responses are uncached and prevent framing', () => {
   assert.equal(response.headers.get('Cache-Control'), 'private, no-store');
   assert.equal(response.headers.get('X-Frame-Options'), 'DENY');
   assert.match(response.headers.get('Content-Security-Policy'), /frame-ancestors 'none'/);
+});
+
+
+test('IMAP service identity cannot authenticate the web mailbox or admin audience', async () => {
+  for (const aud of [IMAP_ACCESS_AUDIENCE, [IMAP_ACCESS_AUDIENCE]]) {
+    const service = await sign({ aud });
+    await assert.rejects(() => validateAccessToken(service, [jwk]));
+    assert.deepEqual((await validateAccessToken(service, [jwk], Date.now() / 1000, IMAP_ACCESS_AUDIENCE)).aud, aud);
+  }
+  for (const aud of ['other', null, 42, { includes: IMAP_ACCESS_AUDIENCE }]) {
+    await assert.rejects(() => sign({ aud }).then(token => validateAccessToken(token, [jwk], Date.now() / 1000, IMAP_ACCESS_AUDIENCE)));
+  }
+  await assert.rejects(() => sign().then(token => validateAccessToken(token, [jwk], Date.now() / 1000, IMAP_ACCESS_AUDIENCE)));
 });

@@ -1,6 +1,7 @@
 // The existing TP-Auth application remains the source of identity and policy.
 export const ACCESS_ISSUER = 'https://synoauth.cloudflareaccess.com';
 export const ACCESS_AUDIENCE = 'c26e1efce47eaa8751ad284778ed797ca58d5112e1d62e404c056ea351b6be09';
+export const IMAP_ACCESS_AUDIENCE = 'bdefc808a47ee7e190a511c10bd0859694fdf4682f693a63daf6b5aa83bce8e8';
 export const MAIL_ORIGIN = 'https://mail.ionacs.com';
 const allowedOrigins = new Set([MAIL_ORIGIN, 'https://m.ionacs.com']);
 let publicKeys = [], expires = 0, lastFetch = 0;
@@ -10,14 +11,15 @@ function decode(value) {
   return Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
 }
 
-export async function validateAccessToken(token, keys, now = Date.now() / 1000) {
+export async function validateAccessToken(token, keys, now = Date.now() / 1000, audience = ACCESS_AUDIENCE) {
   if (typeof token !== 'string' || token.length > 16384) throw new Error('Invalid token');
   const parts = token.split('.');
   if (parts.length !== 3) throw new Error('Invalid token');
   const header = JSON.parse(new TextDecoder().decode(decode(parts[0])));
   const claims = JSON.parse(new TextDecoder().decode(decode(parts[1])));
   if (header.alg !== 'RS256' || typeof header.kid !== 'string' || header.crit) throw new Error('Invalid algorithm');
-  if (claims.iss !== ACCESS_ISSUER || !Array.isArray(claims.aud) || !claims.aud.includes(ACCESS_AUDIENCE)
+  const audiences = typeof claims.aud === 'string' ? [claims.aud] : claims.aud;
+  if (claims.iss !== ACCESS_ISSUER || !Array.isArray(audiences) || !audiences.includes(audience)
     || !Number.isFinite(claims.exp) || claims.exp <= now
     || (claims.nbf !== undefined && (!Number.isFinite(claims.nbf) || claims.nbf > now + 30))) throw new Error('Invalid claims');
   const jwk = keys.find(k => k.kid === header.kid && k.kty === 'RSA' && (!k.alg || k.alg === 'RS256'));
@@ -28,7 +30,7 @@ export async function validateAccessToken(token, keys, now = Date.now() / 1000) 
   return claims;
 }
 
-export async function requireAccess(request) {
+export async function requireAccess(request, audience = ACCESS_AUDIENCE) {
   const token = request.headers.get('Cf-Access-Jwt-Assertion');
   if (!token || token.length > 16384) return false;
   try {
@@ -42,7 +44,7 @@ export async function requireAccess(request) {
       if (!Array.isArray(data.keys)) return false;
       publicKeys = data.keys; expires = now + 300000;
     }
-    return await validateAccessToken(token, publicKeys);
+    return await validateAccessToken(token, publicKeys, Date.now() / 1000, audience);
   } catch { return false; }
 }
 

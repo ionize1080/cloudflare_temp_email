@@ -1,7 +1,8 @@
 import { Context } from 'hono';
 import { Jwt } from 'hono/utils/jwt'
 
-import { getBooleanValue, getDomains, getStringValue, getIntValue, getUserRoles, getDefaultDomains, getJsonSetting, getAnotherWorkerList, hashPassword } from './utils';
+import { getBooleanValue, getDomains, getStringValue, getIntValue, getUserRoles, getDefaultDomains, getJsonSetting, getAnotherWorkerList } from './utils';
+import { hashPassword, randomAppPassword } from '../../shared/passwords.mjs';
 import { unbindTelegramByAddress } from './telegram_api/common';
 import { CONSTANTS } from './constants';
 import { AdminWebhookSettings, WebhookMail, WebhookSettings } from './models';
@@ -84,12 +85,7 @@ export async function updateAddressUpdatedAt(
 }
 
 export const generateRandomPassword = (): string => {
-    const charset = "abcdefghijklmnopqrstuvwxyz0123456789";
-    let password = "";
-    for (let i = 0; i < 8; i++) {
-        password += charset.charAt(Math.floor(Math.random() * charset.length));
-    }
-    return password;
+    return randomAppPassword().slice(0, 24);
 }
 
 const generatePasswordForAddress = async (
@@ -125,6 +121,7 @@ export const newAddress = async (
         checkAllowDomains = true,
         enableCheckNameRegex = true,
         sourceMeta = null,
+        password = null,
     }: {
         name: string, domain: string | undefined | null,
         enablePrefix: boolean,
@@ -133,6 +130,7 @@ export const newAddress = async (
         checkAllowDomains?: boolean,
         enableCheckNameRegex?: boolean,
         sourceMeta?: string | undefined | null,
+        password?: string | null,
     }
 ): Promise<{ address: string, jwt: string, password?: string | null }> => {
     const msgs = i18n.getMessagesbyContext(c);
@@ -183,11 +181,12 @@ export const newAddress = async (
     }
     // create address
     name = name + "@" + domain;
+    const suppliedHash = password ? await hashPassword(password) : null;
     try {
         // Try insert with source_meta field first
         const result = await c.env.DB.prepare(
-            `INSERT INTO address(name, source_meta) VALUES(?, ?)`
-        ).bind(name, sourceMeta).run();
+            `INSERT INTO address(name, source_meta, password) VALUES(?, ?, ?)`
+        ).bind(name, sourceMeta, suppliedHash).run();
         if (!result.success) {
             throw new Error(msgs.FailedCreateAddressMsg)
         }
@@ -197,8 +196,8 @@ export const newAddress = async (
         // Fallback: source_meta field may not exist, try without it
         if (message && message.includes("source_meta")) {
             const result = await c.env.DB.prepare(
-                `INSERT INTO address(name) VALUES(?)`
-            ).bind(name).run();
+                `INSERT INTO address(name, password) VALUES(?, ?)`
+            ).bind(name, suppliedHash).run();
             if (!result.success) {
                 throw new Error(msgs.FailedCreateAddressMsg)
             }
@@ -214,7 +213,7 @@ export const newAddress = async (
     ).bind(name).first<number>("id");
 
     // 如果启用地址密码功能，自动生成密码
-    const generatedPassword = await generatePasswordForAddress(c, name);
+    const generatedPassword = password ? null : await generatePasswordForAddress(c, name);
 
     // create jwt
     const jwt = await Jwt.sign({

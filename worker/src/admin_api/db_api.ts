@@ -1,4 +1,5 @@
 import { Context } from "hono";
+import { IMAP_SCHEMA } from "../imap_schema";
 import { CONSTANTS } from "../constants";
 import utils from "../utils";
 
@@ -142,6 +143,7 @@ export default {
             .map((query) => query.trim())
             .join(";\n");
         await c.env.DB.exec(query);
+        await c.env.DB.batch(IMAP_SCHEMA.map(sql => c.env.DB.prepare(sql)));
 
         const version = await utils.getSetting(c, CONSTANTS.DB_VERSION_KEY);
         if (version) {
@@ -202,6 +204,7 @@ export default {
                 .join(";\n");
             await c.env.DB.exec(query);
             // Update the version in the settings table
+            await c.env.DB.batch(IMAP_SCHEMA.map(sql => c.env.DB.prepare(sql)));
             await utils.saveSetting(c, CONSTANTS.DB_VERSION_KEY, CONSTANTS.DB_VERSION);
             return c.json({
                 success: true,

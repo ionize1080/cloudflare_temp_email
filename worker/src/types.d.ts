@@ -9,6 +9,10 @@ type Bindings = {
     DB: D1Database
     KV: KVNamespace
     RATE_LIMITER: any
+    AUTH_RATE_LIMITER: RateLimit
+    IMAP_GATEWAY_SECRET: string | undefined
+    IMAP_HOST: string | undefined
+    IMAP_PORT: string | number | undefined
     SEND_MAIL: any
     ASSETS: Fetcher
     AI: Ai
@@ -107,7 +111,10 @@ type UserPayload = {
     iat: number
 }
 
+type ImapPayload = { address_id: number; address: string; app_id: string; scope: string; exp: number };
+
 type Variables = {
+    imapPayload: ImapPayload,
     accessEmail: string,
     userPayload: UserPayload,
     userRolePayload: string | undefined | null,

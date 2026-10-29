@@ -1,0 +1,2 @@
+Twisted[tls]==26.4.0
+httpx==0.28.1

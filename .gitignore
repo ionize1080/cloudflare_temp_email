@@ -139,3 +139,6 @@ wrangler.toml
 .private/
 *.credentials.json
 pnpm-lock.yaml
+__pycache__/
+*.py[cod]
+.venv/
