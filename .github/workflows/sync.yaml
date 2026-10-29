@@ -1,8 +1,7 @@
 name: Upstream Sync
 
 on:
-  schedule:
-    - cron: "0 0 * * 1"
+  # This fork has a custom production UI and security boundary. Sync deliberately.
   workflow_dispatch:
 
 jobs:

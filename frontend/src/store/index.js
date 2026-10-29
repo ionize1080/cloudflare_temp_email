@@ -6,6 +6,12 @@ import {
 
 export const useGlobalState = createGlobalState(
     () => {
+        // Upgrade saved credentials to tab-scoped storage without losing the current login.
+        for (const key of ['auth', 'adminAuth', 'jwt', 'userJwt']) {
+            const previous = localStorage.getItem(key);
+            if (previous && !sessionStorage.getItem(key)) sessionStorage.setItem(key, previous);
+            localStorage.removeItem(key);
+        }
         const isDark = useDark()
         const toggleDark = useToggle(isDark)
         const loading = ref(false);
@@ -61,9 +67,9 @@ export const useGlobalState = createGlobalState(
         const showAuth = ref(false);
         const showAddressCredential = ref(false);
         const showAdminAuth = ref(false);
-        const auth = useStorage('auth', '');
-        const adminAuth = useStorage('adminAuth', '');
-        const jwt = useStorage('jwt', '');
+        const auth = useSessionStorage('auth', '');
+        const adminAuth = useSessionStorage('adminAuth', '');
+        const jwt = useSessionStorage('jwt', '');
         const addressPassword = useSessionStorage('addressPassword', '');
         const adminTab = useSessionStorage('adminTab', "account");
         const adminMailTabAddress = ref("");
@@ -71,7 +77,7 @@ export const useGlobalState = createGlobalState(
         const mailboxSplitSize = useStorage('mailboxSplitSize', 0.25);
         const useIframeShowMail = useStorage('useIframeShowMail', false);
         const preferShowTextMail = useStorage('preferShowTextMail', false);
-        const userJwt = useStorage('userJwt', '');
+        const userJwt = useSessionStorage('userJwt', '');
         const userTab = useSessionStorage('userTab', 'address_management');
         const indexTab = useSessionStorage('indexTab', 'mailbox');
         const globalTabplacement = useStorage('globalTabplacement', 'top');

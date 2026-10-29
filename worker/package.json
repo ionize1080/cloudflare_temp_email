@@ -21,10 +21,10 @@
     "wrangler": "^4.54.0"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "3.888.0",
-    "@aws-sdk/s3-request-presigner": "3.888.0",
+    "@aws-sdk/client-s3": "3.1159.0",
+    "@aws-sdk/s3-request-presigner": "3.1159.0",
     "@simplewebauthn/server": "10.0.1",
-    "hono": "^4.11.0",
+    "hono": "^4.13.14",
     "jsonpath-plus": "^10.3.0",
     "mimetext": "^3.0.27",
     "postal-mime": "^2.6.1",

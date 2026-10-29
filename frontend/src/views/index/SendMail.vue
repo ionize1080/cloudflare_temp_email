@@ -4,6 +4,7 @@ import { Editor, Toolbar } from '@wangeditor/editor-for-vue'
 import { useI18n } from 'vue-i18n'
 import { onMounted, onBeforeUnmount, ref, shallowRef } from 'vue'
 import AdminContact from '../common/AdminContact.vue'
+import SafeMail from '../../components/SafeMail.vue';
 
 import { useGlobalState } from '../../store'
 import { api } from '../../api'
@@ -86,11 +87,10 @@ const send = async () => {
             contentType: 'text',
             content: "",
         }
+        message.success(t("successSend"));
+        indexTab.value = 'sendbox';
     } catch (error) {
         message.error(error.message || "error");
-    } finally {
-        message.success(t("successSend"));
-        indexTab.value = 'sendbox'
     }
 }
 
@@ -189,7 +189,7 @@ onMounted(async () => {
                         </n-form-item>
                         <n-form-item :label="t('content')" label-placement="top">
                             <n-card :bordered="false" embedded v-if="isPreview">
-                                <div v-html="sendMailModel.content" />
+                                <SafeMail :html="sendMailModel.content" />
                             </n-card>
                             <div v-else-if="sendMailModel.contentType == 'rich'" style="border: 1px solid #ccc">
                                 <Toolbar style="border-bottom: 1px solid #ccc" :defaultConfig="toolbarConfig"

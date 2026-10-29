@@ -198,20 +198,21 @@ export const getPasswords = (c: Context<HonoCustomType>): string[] => {
 }
 
 export const getAdminPasswords = (c: Context<HonoCustomType>): string[] => {
-    if (!c.env.ADMIN_PASSWORDS) {
+    const configured = c.env.ADMIN_PASSWORDS_SECRET || c.env.ADMIN_PASSWORDS;
+    if (!configured) {
         return [];
     }
     // check if ADMIN_PASSWORDS is an array, if not use json.parse
-    if (!Array.isArray(c.env.ADMIN_PASSWORDS)) {
+    if (!Array.isArray(configured)) {
         try {
-            const res = JSON.parse(c.env.ADMIN_PASSWORDS) as string[];
-            return res.filter((item) => item.length > 0);
+            const res = JSON.parse(configured) as string[];
+            return Array.isArray(res) ? res.filter((item) => typeof item === 'string' && item.length > 0) : [];
         } catch (e) {
             console.error("Failed to parse ADMIN_PASSWORDS", e);
             return [];
         }
     }
-    return c.env.ADMIN_PASSWORDS.filter((item) => item.length > 0);
+    return configured.filter((item) => item.length > 0);
 }
 
 export const getEnvStringList = (value: string | string[] | undefined): string[] => {

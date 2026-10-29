@@ -15,6 +15,8 @@ import { email } from './email';
 import { scheduled } from './scheduled';
 import { getAdminPasswords, getPasswords, getBooleanValue, getStringArray } from './utils';
 import { checkAccessControl } from './ip_blacklist';
+import { bodyLimit } from 'hono/body-limit';
+import { requireAccess, rejectCrossOrigin, isAllowedOrigin, equalSecret, securityHeaders } from '../../shared/security.mjs';
 
 const API_PATHS = [
 	"/api/",
@@ -27,11 +29,19 @@ const API_PATHS = [
 
 const app = new Hono<HonoCustomType>()
 //cors
-app.use('/*', cors());
+app.use('/*', async (c, next) => {
+    try {
+        if (!await requireAccess(c.req.raw)) { c.res = c.text('Cloudflare Access authentication required', 401); return; }
+        if (rejectCrossOrigin(c.req.raw)) { c.res = c.text('Forbidden origin', 403); return; }
+        await next();
+    } finally { c.res = securityHeaders(c.res, { html: c.res.headers.get('content-type')?.includes('text/html') }); }
+});
+app.use('/*', cors({ origin: origin => isAllowedOrigin(origin) ? origin : '', allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] }));
+app.use('/*', bodyLimit({ maxSize: 2 * 1024 * 1024, onError: c => c.text('Request too large', 413) }));
 // error handler
 app.onError((err, c) => {
-	console.error(err)
-	return c.text(`${err.name} ${err.message}`, 500)
+	console.error(JSON.stringify({ event: 'request_failed', name: err.name, path: c.req.path }))
+	return c.text('服务暂时不可用，请稍后重试。', 500)
 })
 // global middlewares
 app.use('/*', async (c, next) => {
@@ -54,7 +64,7 @@ app.use('/*', async (c, next) => {
 	const passwords = getPasswords(c);
 	if (!c.req.path.startsWith("/open_api") && !c.req.path.startsWith("/telegram/") && passwords && passwords.length > 0) {
 		const auth = c.req.raw.headers.get("x-custom-auth");
-		if (!auth || !passwords.includes(auth)) {
+		if (!auth || !(await Promise.all(passwords.map(password => equalSecret(auth, password)))).some(Boolean)) {
 			return c.text(msgs.CustomAuthPasswordMsg, 401)
 		}
 	}
@@ -66,6 +76,9 @@ app.use('/*', async (c, next) => {
 		|| c.req.path.startsWith("/external/api/send_mail")
 		|| c.req.path.startsWith("/user_api/register")
 		|| c.req.path.startsWith("/user_api/verify_code")
+		|| c.req.path.startsWith("/api/address_login")
+		|| c.req.path.startsWith("/user_api/login")
+		|| c.req.path.startsWith("/admin/")
 	) {
 		const reqIp = c.req.raw.headers.get("cf-connecting-ip")
 		if (reqIp && c.env.RATE_LIMITER) {
@@ -218,7 +231,7 @@ app.use('/admin/*', async (c, next) => {
 	const adminPasswords = getAdminPasswords(c);
 	if (adminPasswords && adminPasswords.length > 0) {
 		const adminAuth = c.req.raw.headers.get("x-admin-auth");
-		if (adminAuth && adminPasswords.includes(adminAuth)) {
+		if (adminAuth && (await Promise.all(adminPasswords.map(password => equalSecret(adminAuth, password)))).some(Boolean)) {
 			await next();
 			return;
 		}

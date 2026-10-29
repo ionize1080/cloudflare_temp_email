@@ -3,6 +3,7 @@ import { watch, onMounted, ref, computed } from "vue";
 import { useMessage } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { useGlobalState } from '../store'
+import SafeMail from './SafeMail.vue';
 import { useIsMobile } from '../utils/composables'
 import { utcToLocalDate } from '../utils';
 
@@ -294,7 +295,7 @@ onMounted(async () => {
             </n-space>
             <pre v-if="showCode" style="margin-top: 10px;">{{ curMail.raw }}</pre>
             <pre v-else-if="!curMail.is_html" style="margin-top: 10px;">{{ curMail.content }}</pre>
-            <div v-else v-html="curMail.content" style="margin-top: 10px;"></div>
+            <SafeMail v-else :html="curMail.content" />
           </n-card>
           <n-card :bordered="false" embedded class="mail-item" v-else>
             <n-result status="info" :title="t('pleaseSelectMail')">
@@ -363,7 +364,7 @@ onMounted(async () => {
             </n-space>
             <pre v-if="showCode" style="margin-top: 10px;">{{ curMail.raw }}</pre>
             <pre v-else-if="!curMail.is_html" style="margin-top: 10px;">{{ curMail.content }}</pre>
-            <div v-else v-html="curMail.content" style="margin-top: 10px;"></div>
+            <SafeMail v-else :html="curMail.content" />
           </n-card>
         </n-drawer-content>
       </n-drawer>

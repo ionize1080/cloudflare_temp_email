@@ -403,16 +403,16 @@ export const handleListQuery = async (
     if (!limit || limit < 0 || limit > 100) {
         return c.text(msgs.InvalidLimitMsg, 400)
     }
-    if (offset == null || offset == undefined || offset < 0) {
+    if (!Number.isInteger(offset) || offset == null || offset < 0) {
         return c.text(msgs.InvalidOffsetMsg, 400)
     }
     const resultsQuery = `${query} order by id desc limit ? offset ?`;
     const { results } = await c.env.DB.prepare(resultsQuery).bind(
         ...params, limit, offset
     ).all();
-    const count = offset == 0 ? await c.env.DB.prepare(
+    const count = await c.env.DB.prepare(
         countQuery
-    ).bind(...params).first("count") : 0;
+    ).bind(...params).first("count");
     return c.json({ results, count });
 }
 

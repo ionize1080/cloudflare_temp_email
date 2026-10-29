@@ -287,7 +287,10 @@ export const getSendbox = async (
 
 api.get('/api/sendbox', async (c) => {
     const { address } = c.get("jwtPayload")
-    const { limit, offset } = c.req.query();
+    const { limit, offset, q = '' } = c.req.query();
+    if (q.trim()) {
+        return handleListQuery(c, 'SELECT * FROM sendbox WHERE address = ? AND instr(lower(raw), lower(?)) > 0', 'SELECT count(*) AS count FROM sendbox WHERE address = ? AND instr(lower(raw), lower(?)) > 0', [address, q.trim().slice(0, 200)], limit, offset);
+    }
     return getSendbox(c, address, limit, offset);
 })
 

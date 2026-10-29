@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Index from '../views/Index.vue'
+import Index from '../views/MailWorkspace.vue'
 import User from '../views/User.vue'
 import UserOauth2Callback from '../views/user/UserOauth2Callback.vue'
 import i18n from '../i18n'
@@ -53,6 +53,10 @@ router.beforeEach((to, from, next) => {
     // check if query parameter has jwt, set it to store
     if (to.query.jwt) {
         jwt.value = to.query.jwt;
+        const query = { ...to.query };
+        delete query.jwt;
+        next({ path: to.path, query, hash: to.hash, replace: true });
+        return;
     }
     next()
 });

@@ -186,8 +186,6 @@ const handleSaveToS3 = async (filename, blob) => {
     <!-- 邮件内容 -->
     <div class="mail-content">
       <pre v-if="showTextMail" class="mail-text">{{ mail.text }}</pre>
-      <iframe v-else-if="useIframeShowMail" :srcdoc="mail.message" class="mail-iframe">
-      </iframe>
       <ShadowHtmlComponent v-else :key="mail.id" :htmlContent="mail.message" class="mail-html" />
     </div>
   </div>
@@ -197,8 +195,6 @@ const handleSaveToS3 = async (filename, blob) => {
     <n-drawer-content :title="mail.subject" closable>
       <div class="fullscreen-mail-content">
         <pre v-if="showTextMail" class="mail-text">{{ mail.text }}</pre>
-        <iframe v-else-if="useIframeShowMail" :srcdoc="mail.message" class="mail-iframe">
-        </iframe>
         <ShadowHtmlComponent v-else :key="mail.id" :htmlContent="mail.message" class="mail-html" />
       </div>
     </n-drawer-content>

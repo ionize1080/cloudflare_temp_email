@@ -8,6 +8,10 @@ import { useIsMobile } from './utils/composables'
 import Header from './views/Header.vue';
 import Footer from './views/Footer.vue';
 import { api } from './api'
+import { useRoute } from 'vue-router'
+const route = useRoute();
+const isMailWorkspace = computed(() => route.path === '/' || /^\/(zh|en)\/?$/.test(route.path));
+const themeOverrides = { common: { primaryColor: '#0b57d0', primaryColorHover: '#1765d9', primaryColorPressed: '#084bb6', borderRadius: '8px' } };
 
 const {
   isDark, loading, useSideMargin, telegramApp, isTelegram
@@ -77,12 +81,13 @@ onMounted(async () => {
 </script>
 
 <template>
-  <n-config-provider :locale="localeConfig" :theme="theme">
+  <n-config-provider :locale="localeConfig" :theme="theme" :theme-overrides="themeOverrides">
     <n-global-style />
     <n-spin description="loading..." :show="loading">
       <n-notification-provider container-style="margin-top: 60px;">
         <n-message-provider container-style="margin-top: 20px;">
-          <n-grid x-gap="12" :cols="gridMaxCols">
+          <router-view v-if="isMailWorkspace" />
+          <n-grid v-else x-gap="12" :cols="gridMaxCols">
             <n-gi v-if="showSideMargin" span="1">
               <div class="side" v-if="showAd">
                 <ins class="adsbygoogle" style="display:block" :data-ad-client="adClient" :data-ad-slot="adSlot"

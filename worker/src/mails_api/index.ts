@@ -26,12 +26,14 @@ api.get('/api/mails', async (c) => {
     if (!address) {
         return c.json({ "error": "No address" }, 400)
     }
-    const { limit, offset } = c.req.query();
+    const { limit, offset, q = '' } = c.req.query();
+    const search = q.trim().slice(0, 200);
+    const filter = search ? ' AND (instr(lower(raw), lower(?)) > 0 OR instr(lower(source), lower(?)) > 0)' : '';
     if (Number.parseInt(offset) <= 0) await updateAddressUpdatedAt(c, address);
     return await handleListQuery(c,
-        `SELECT * FROM raw_mails where address = ?`,
-        `SELECT count(*) as count FROM raw_mails where address = ?`,
-        [address], limit, offset
+        `SELECT * FROM raw_mails where address = ?${filter}`,
+        `SELECT count(*) as count FROM raw_mails where address = ?${filter}`,
+        search ? [address, search, search] : [address], limit, offset
     );
 })
 

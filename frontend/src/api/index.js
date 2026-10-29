@@ -6,6 +6,7 @@ import i18n from '../i18n'
 import { getFingerprint } from '../utils/fingerprint'
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
+const responseMessage = data => typeof data === 'string' ? data : data?.error || data?.message || '请求失败，请稍后重试';
 const {
     loading, auth, jwt, settings, openSettings,
     userOpenSettings, userSettings, announcement,
@@ -19,7 +20,7 @@ const instance = axios.create({
 });
 
 const apiFetch = async (path, options = {}) => {
-    loading.value = true;
+    if (!options.quiet) loading.value = true;
     try {
         // Get browser fingerprint for request tracking
         const fingerprint = await getFingerprint();
@@ -45,17 +46,17 @@ const apiFetch = async (path, options = {}) => {
             showAuth.value = true;
         }
         if (response.status >= 300) {
-            throw new Error(`[${response.status}]: ${response.data}` || "error");
+            throw new Error(`[${response.status}]: ${responseMessage(response.data)}`);
         }
         const data = response.data;
         return data;
     } catch (error) {
         if (error.response) {
-            throw new Error(`Code ${error.response.status}: ${error.response.data}` || "error");
+            throw new Error(`Code ${error.response.status}: ${responseMessage(error.response.data)}`);
         }
         throw error;
     } finally {
-        loading.value = false;
+        if (!options.quiet) loading.value = false;
     }
 }
 
@@ -105,7 +106,7 @@ const getOpenSettings = async (message, notification) => {
             notification.info({
                 content: () => {
                     return h("div", {
-                        innerHTML: announcement.value
+                        textContent: announcement.value
                     });
                 }
             });

@@ -178,13 +178,7 @@ const generateNameLoading = ref(false);
 const generateName = async () => {
     try {
         generateNameLoading.value = true;
-        const { faker } = await import('https://esm.sh/@faker-js/faker');
-        emailName.value = faker.internet.email()
-            .split('@')[0]
-            .replace(/\s+/g, '.')
-            .replace(/\.{2,}/g, '.')
-            .replace(addressRegex.value, '')
-            .toLowerCase();
+        emailName.value = `mail${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`.replace(addressRegex.value, '');
         // support maxAddressLen
         if (emailName.value.length > openSettings.value.maxAddressLen) {
             emailName.value = emailName.value.slice(0, openSettings.value.maxAddressLen);

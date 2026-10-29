@@ -1,0 +1,41 @@
+name: IONACS Mail checks and deployment
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy verified code to mail.ionacs.com
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.10.0
+      - run: pnpm --dir worker install --frozen-lockfile
+      - run: pnpm --dir frontend install --frozen-lockfile
+      - run: node --test checks/security.test.mjs
+      - run: pnpm --dir worker lint
+      - run: pnpm --dir worker exec wrangler deploy --config wrangler.production.jsonc --dry-run --outdir dist --minify
+      - run: pnpm --dir frontend build:pages
+      - run: pnpm --dir frontend audit --prod --audit-level high
+      - run: pnpm --dir worker audit --prod --audit-level high
+      - name: Deploy API and Pages
+        if: github.event_name == 'workflow_dispatch' && inputs.deploy && github.ref == 'refs/heads/main'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          pnpm --dir worker exec wrangler deploy --config wrangler.production.jsonc --minify
+          cd pages
+          ../frontend/node_modules/.bin/wrangler pages deploy ../frontend/dist --project-name frontend --branch main

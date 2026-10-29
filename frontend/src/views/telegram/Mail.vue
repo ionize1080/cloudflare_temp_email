@@ -1,5 +1,6 @@
 <script setup>
 import { useRoute } from 'vue-router'
+import SafeMail from '../../components/SafeMail.vue';
 
 import { useGlobalState } from '../../store'
 import { api } from '../../api'
@@ -59,8 +60,7 @@ onMounted(async () => {
             <n-tag v-if="showEMailTo" type="info">
                 TO: {{ curMail.address }}
             </n-tag>
-            <iframe :srcdoc="curMail.message" style="margin-top: 10px;width: 100%; height: 100%;">
-            </iframe>
+            <SafeMail :html="curMail.message" />
         </n-card>
     </div>
 </template>

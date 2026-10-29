@@ -136,4 +136,6 @@ dist
 .wrangler
 wrangler.toml
 .dev.vars
+.private/
+*.credentials.json
 pnpm-lock.yaml

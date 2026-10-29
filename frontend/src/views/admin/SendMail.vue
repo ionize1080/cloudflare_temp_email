@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 import { onBeforeUnmount, ref, shallowRef } from 'vue'
 import { useSessionStorage } from '@vueuse/core'
 import { api } from '../../api'
+import SafeMail from '../../components/SafeMail.vue';
 
 const message = useMessage()
 const isPreview = ref(false)
@@ -87,10 +88,9 @@ const send = async () => {
             contentType: 'text',
             content: "",
         }
+        message.success(t("successSend"));
     } catch (error) {
         message.error(error.message || "error");
-    } finally {
-        message.success(t("successSend"));
     }
 }
 
@@ -156,7 +156,7 @@ const handleCreated = (editor) => {
                     </n-form-item>
                     <n-form-item :label="t('content')" label-placement="top">
                         <n-card :bordered="false" embedded v-if="isPreview">
-                            <div v-html="sendMailModel.content" />
+                            <SafeMail :html="sendMailModel.content" />
                         </n-card>
                         <div v-else-if="sendMailModel.contentType == 'rich'" style="border: 1px solid #ccc">
                             <Toolbar style="border-bottom: 1px solid #ccc" :defaultConfig="toolbarConfig"

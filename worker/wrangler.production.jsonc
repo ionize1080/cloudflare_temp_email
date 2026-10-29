@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mailworker",
+  "main": "src/worker.ts",
+  "account_id": "9e7dc30189a7850a649886ffa37182ee",
+  "compatibility_date": "2025-09-29",
+  "compatibility_flags": ["nodejs_compat"],
+  "keep_vars": false,
+  "workers_dev": true,
+  "preview_urls": false,
+  "vars": {
+    "TITLE": "IONACS Mail",
+    "DEFAULT_LANG": "zh",
+    "FRONTEND_URL": "https://mail.ionacs.com",
+    "DOMAINS": ["ioaaz.com", "ionacs.com"],
+    "ENABLE_USER_CREATE_EMAIL": "true",
+    "ENABLE_USER_DELETE_EMAIL": "true",
+    "DISABLE_ADMIN_PASSWORD_CHECK": "false"
+  },
+  "d1_databases": [{"binding": "DB", "database_name": "maildata", "database_id": "51d8c8f2-6139-4a6c-ad85-40668d0c45d2"}],
+  "kv_namespaces": [{"binding": "KV", "id": "4bc0c8bef04d416196e5d47a15dee3db"}],
+  "ratelimits": [{"name": "RATE_LIMITER", "namespace_id": "1001", "simple": {"limit": 60, "period": 60}}],
+  "observability": {"enabled": true, "head_sampling_rate": 0.1, "logs": {"enabled": true, "invocation_logs": false}, "traces": {"enabled": true, "head_sampling_rate": 0.1}}
+}

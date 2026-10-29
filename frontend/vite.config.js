@@ -7,17 +7,16 @@ import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import { NaiveUiResolver } from 'unplugin-vue-components/resolvers'
 import wasm from "vite-plugin-wasm";
-import topLevelAwait from "vite-plugin-top-level-await";
 
 // https://vitejs.dev/config/
 export default defineConfig({
   build: {
     outDir: './dist',
+    target: 'es2022',
   },
   plugins: [
     vue(),
     wasm(),
-    topLevelAwait(),
     AutoImport({
       imports: [
         'vue',
@@ -48,9 +47,9 @@ export default defineConfig({
         cleanupOutdatedCaches: true,
       },
       manifest: {
-        name: 'Temp Email',
-        short_name: 'Temp Email',
-        description: 'Temp Email - Temporary Email',
+        name: 'IONACS Mail',
+        short_name: 'IONACS Mail',
+        description: 'IONACS 私人邮箱',
         theme_color: '#ffffff',
         icons: [
           {

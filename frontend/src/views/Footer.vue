@@ -26,7 +26,7 @@ const { t } = useI18n({
                     {{ t('copyright') }} © 2023-{{ new Date().getFullYear() }}
                 </n-text>
                 <n-text depth="3">
-                    <div v-html="openSettings.copyright"></div>
+                    <div>{{ openSettings.copyright }}</div>
                 </n-text>
             </n-space>
         </div>
