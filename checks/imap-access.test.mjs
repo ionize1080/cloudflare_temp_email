@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import { hashPassword, hashPasswordDigest, passwordDigest, validatePassword, verifyPassword } from '../shared/passwords.mjs';
-import { requestImap, reviewImap, createImapPassword, authenticateImap, validImapSession, mailboxIdentity, imapState } from '../shared/imap-access.mjs';
+import { requestImap, reviewImap, createImapPassword, authenticateImap, validImapSession, mailboxIdentity, imapState, updateImapFlags } from '../shared/imap-access.mjs';
 
 function fixture() {
   const sql = new DatabaseSync(':memory:');
@@ -15,6 +15,23 @@ function fixture() {
   } };
   return { sql, db };
 }
+
+test('bulk flag changes stay within two SQL queries and preserve mailbox isolation', async () => {
+  const { db, sql } = fixture();
+  for (let i = 1; i <= 100; i++) sql.prepare("INSERT INTO imap_messages(address_id, folder, mail_id, flags) VALUES(1, 'INBOX', ?, ?)").run(i, '["\\\\Answered"]');
+  sql.exec("INSERT INTO imap_messages(address_id, folder, mail_id) VALUES(2, 'INBOX', 101)");
+  const uids = Array.from({ length: 101 }, (_, i) => i + 1);
+  let queries = 0;
+  const bounded = { prepare(query) { queries++; return db.prepare(query); } };
+  const added = await updateImapFlags(bounded, 1, uids, ['\\Seen'], 1);
+  assert.equal(queries, 2); assert.equal(added.results.length, 100);
+  for (const row of added.results) assert.deepEqual(new Set(JSON.parse(row.flags)), new Set(['\\Seen', '\\Answered']));
+  const removed = await updateImapFlags(db, 1, uids, ['\\Seen'], -1);
+  assert.deepEqual(JSON.parse(removed.results[0].flags), ['\\Answered']);
+  const replaced = await updateImapFlags(db, 1, uids, ['\\Flagged'], 0);
+  assert.deepEqual(JSON.parse(replaced.results[0].flags), ['\\Flagged']);
+  assert.equal(sql.prepare('SELECT flags FROM imap_messages WHERE address_id=2').get().flags, '[]');
+});
 test('passwords use independent salts, enforce length, and support legacy upgrades', async () => {
   const raw = 'long-test-password-2026';
   const a = await hashPassword(raw), b = await hashPassword(raw);

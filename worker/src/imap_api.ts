@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { Jwt } from 'hono/utils/jwt';
 import { equalSecret } from '../../shared/security.mjs';
-import { ImapAccessError, imapState, mailboxIdentity, requestImap, reviewImap, createImapPassword, authenticateImap, validImapSession } from '../../shared/imap-access.mjs';
+import { ImapAccessError, imapState, mailboxIdentity, requestImap, reviewImap, createImapPassword, authenticateImap, validImapSession, updateImapFlags } from '../../shared/imap-access.mjs';
 import { getBooleanValue, sendAdminInternalMail } from './utils';
 
 export const mailboxImapApi = new Hono<HonoCustomType>();
@@ -96,12 +96,7 @@ bridgeImapApi.post('/imap_api/flags', async c => {
     const { uids, flags, mode } = await c.req.json();
     if (!Array.isArray(uids) || !uids.length || uids.length > 100 || !uids.every(id => Number.isSafeInteger(id) && id > 0)
         || !Array.isArray(flags) || flags.length > 5 || !flags.every(f => allowedFlags.includes(f)) || ![-1, 0, 1].includes(mode)) return c.text('Invalid flags', 400);
-    // Use json_each for atomic union/subtraction so concurrent clients do not lose flags.
-    const value = mode === 0 ? '?' : mode === 1
-        ? `(SELECT json_group_array(value) FROM (SELECT value FROM json_each(imap_messages.flags) UNION SELECT value FROM json_each(?)))`
-        : `(SELECT json_group_array(value) FROM json_each(imap_messages.flags) WHERE value NOT IN (SELECT value FROM json_each(?)))`;
-    await c.env.DB.batch(uids.map(uid => c.env.DB.prepare(`UPDATE imap_messages SET flags = ${value} WHERE uid = ? AND address_id = ?`).bind(JSON.stringify([...new Set(flags)]), uid, c.get('imapPayload').address_id)));
-    const rows = await c.env.DB.prepare('SELECT uid, flags FROM imap_messages WHERE address_id = ? AND uid IN (SELECT value FROM json_each(?))').bind(c.get('imapPayload').address_id, JSON.stringify(uids)).all();
+    const rows = await updateImapFlags(c.env.DB, c.get('imapPayload').address_id, uids, flags, mode);
     return c.json({ results: rows.results });
 });
 bridgeImapApi.post('/imap_api/expunge', async c => {

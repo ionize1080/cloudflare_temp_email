@@ -55,3 +55,14 @@ export async function validImapSession(db, session) {
     JOIN address a ON a.id = p.address_id WHERE p.id = ? AND p.address_id = ? AND a.name = ? AND i.enabled = 1`)
     .bind(session.app_id, session.address_id, session.address).first());
 }
+
+export async function updateImapFlags(db, addressId, uids, flags, mode) {
+  // One update avoids per-message D1 query limits when a client marks a folder read.
+  const value = mode === 0 ? '?' : mode === 1
+    ? `(SELECT json_group_array(value) FROM (SELECT value FROM json_each(imap_messages.flags) UNION SELECT value FROM json_each(?)))`
+    : `(SELECT json_group_array(value) FROM json_each(imap_messages.flags) WHERE value NOT IN (SELECT value FROM json_each(?)))`;
+  await db.prepare(`UPDATE imap_messages SET flags = ${value} WHERE address_id = ? AND uid IN (SELECT value FROM json_each(?))`)
+    .bind(JSON.stringify([...new Set(flags)]), addressId, JSON.stringify(uids)).run();
+  return db.prepare('SELECT uid, flags FROM imap_messages WHERE address_id = ? AND uid IN (SELECT value FROM json_each(?))')
+    .bind(addressId, JSON.stringify(uids)).all();
+}
