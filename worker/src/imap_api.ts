@@ -3,6 +3,10 @@ import { Jwt } from 'hono/utils/jwt';
 import { equalSecret } from '../../shared/security.mjs';
 import { ImapAccessError, imapState, mailboxIdentity, requestImap, reviewImap, createImapPassword, authenticateImap, validImapSession, updateImapFlags } from '../../shared/imap-access.mjs';
 import { getBooleanValue, sendAdminInternalMail } from './utils';
+import { getDomains, getJsonSetting } from './utils';
+import { CONSTANTS } from './constants';
+import { smtpPermission, SmtpError } from '../../shared/smtp-access.mjs';
+import { prepareSubmission, submitPrepared } from './smtp_submission.mjs';
 
 export const mailboxImapApi = new Hono<HonoCustomType>();
 mailboxImapApi.use('/api/imap/*', async (c, next) => {
@@ -16,6 +20,8 @@ mailboxImapApi.get('/api/imap/settings', async c => {
     const passwords = await c.env.DB.prepare('SELECT id, label, created_at, last_used_at FROM imap_passwords WHERE address_id = ? ORDER BY created_at DESC').bind(address_id).all();
     return c.json({ state: imapState(row), requested_at: row?.requested_at, passwords: passwords.results,
         host: row?.enabled ? c.env.IMAP_HOST || '' : '', port: Number(c.env.IMAP_PORT || 993), tls: true,
+        smtp_port: Number(c.env.SMTP_PORT || 465), smtp_enabled: Boolean(c.env.SMTP_PORT), max_message_bytes: 1048576,
+        smtp_alt_port: c.env.SMTP_ALT_PORT ? Number(c.env.SMTP_ALT_PORT) : null,
         available: Boolean(c.env.IMAP_HOST && c.env.IMAP_GATEWAY_SECRET) });
 });
 mailboxImapApi.post('/api/imap/request', async c => c.json({ state: imapState(await requestImap(c.env.DB, c.get('jwtPayload').address_id)) }));
@@ -74,6 +80,25 @@ bridgeImapApi.post('/imap_api/authenticate', async c => {
     return c.json({ token, address: identity.address, uidvalidity: identity.address_id });
 });
 bridgeImapApi.get('/imap_api/session', c => c.json({ address: c.get('imapPayload').address }));
+bridgeImapApi.get('/imap_api/smtp/status', async c => {
+    const permission = await smtpPermission(c.env.DB, c.get('imapPayload'));
+    return c.json({ allowed: Number(permission?.balance || 0) > 0, balance: Number(permission?.balance || 0) });
+});
+bridgeImapApi.post('/imap_api/smtp/submit', async c => {
+    const identity = c.get('imapPayload');
+    if (c.env.RATE_LIMITER && !(await c.env.RATE_LIMITER.limit({ key: 'smtp-submit:' + identity.address_id })).success) return c.text('Submission rate limit exceeded', 429);
+    try {
+        const domain = identity.address.split('@')[1];
+        if (!getDomains(c).includes(domain)) return c.text('Invalid sender domain', 403);
+        const blocked = await getJsonSetting(c, CONSTANTS.SEND_BLOCK_LIST_KEY) || [];
+        const prepared = await prepareSubmission(identity, await c.req.json(), Array.isArray(blocked) ? blocked : []);
+        const token = c.env[`RESEND_TOKEN_${domain.replace(/\./g, '_').toUpperCase()}`] || c.env.RESEND_TOKEN;
+        return c.json(await submitPrepared(c.env.DB, identity, prepared, token));
+    } catch (error) {
+        if (error instanceof SmtpError) return c.text(error.message, error.status);
+        throw error;
+    }
+});
 bridgeImapApi.get('/imap_api/messages', async c => {
     const { address_id } = c.get('imapPayload');
     const folder = c.req.query('folder'), after = Number(c.req.query('after') || 0);

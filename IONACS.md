@@ -28,7 +28,7 @@ Users request IMAP access under Mailbox & Account → Third-party clients. Admin
 
 The TLS IMAP gateway runs separately from Workers. Its randomized hostname is configured in the `IMAP_HOST` Worker secret and disclosed in the approved user's account panel. Clients use port 993, SSL/TLS, their complete mailbox address and a generated client password. The selected deployment uses DNS-only routing, so its DNS record reveals the server address. Random naming reduces casual discovery but is not an authentication mechanism. The website continues through the original Cloudflare Access application.
 
-The gateway supports INBOX and SENT, MIME messages and attachments, search, stable UIDs, IDLE polling, flags, and expunging messages marked Deleted when mailbox deletion is enabled. Expunge permanently removes the corresponding webmail message. Webmail's existing local read/star indicators are separate from IMAP flags. Custom folders, uploading/copying messages and SMTP submission are not implemented; send mail from the website. Metadata snapshots are limited to 100,000 messages per folder and a gateway API response to 16 MiB. See [gateway operations](imap_gateway/README.md).
+The gateway supports INBOX and SENT, MIME messages and attachments, search, stable UIDs, IDLE polling, flags, and expunging messages marked Deleted when mailbox deletion is enabled. Expunge permanently removes the corresponding webmail message. Webmail's existing local read/star indicators are separate from IMAP flags. Custom folders and uploading/copying messages are not implemented. SMTP submission uses port 465 with implicit TLS, the same hostname and client password, plus independently approved sender permission and quota. Metadata snapshots are limited to 100,000 messages per folder and a gateway API response to 16 MiB. See [gateway operations](imap_gateway/README.md).
 
 `db/2026-10-29-imap.sql` advances the schema to v0.0.7 with additive permission, credential and UID/flag tables and synchronization triggers. It is repeatable and preserves existing mail. Apply it before deploying the new API. The `/imap_api/*` namespace has a separate Access Service Auth application/audience plus a gateway secret; its signed IMAP sessions use a separate signing key and cannot grant webmail/admin access.
 
@@ -50,6 +50,7 @@ pnpm --dir frontend install --frozen-lockfile
 node --test checks/*.test.mjs
 python -m pip install -r imap_gateway/requirements.txt
 python checks/imap_protocol_test.py
+python checks/smtp_protocol_test.py
 pnpm --dir worker lint
 pnpm --dir worker exec wrangler deploy --config wrangler.production.jsonc --dry-run --outdir dist --minify
 pnpm --dir frontend build:pages
@@ -69,3 +70,13 @@ The security tests exercise signed JWTs, expiry, wrong issuer/audience, unknown 
 Production dependencies were refreshed within compatible versions. The frontend production audit has no known findings. The backend high/critical findings were fixed; residual advisories concern the older optional passkey stack and a transitive UUID API. These are documented limitations, not a claim of complete security certification. A future passkey major-version migration should include credential compatibility testing.
 
 IMAP verification covers permission ownership, request idempotency, credential revocation, password migration, UID stability, MIME retrieval and real TLS client commands. A synthetic isolated mailbox was also used for the deployed gateway check and removed afterwards; no external message delivery was used. Deployment checks are not a claim of certification with every desktop/mobile client. CI tests the gateway, but deploying its server files and rotating its Access service token are separate operator tasks.
+
+## SMTP submission
+
+The gateway accepts authenticated SMTP on 465 only; it exposes no plaintext relay or port 25. PLAIN and LOGIN authentication occur inside TLS. Envelope and MIME From addresses must match the authenticated mailbox. Submission uses the existing Resend credentials through the private Worker API, preserving text/HTML, attachments and inline content IDs. To/Cc/Bcc delivery comes from accepted SMTP envelope recipients; at least one To recipient is required. The total raw message limit is 1 MiB and recipient limit 20. Each envelope recipient consumes one unit of the existing sender quota; webmail continues using its existing one-recipient send flow.
+
+The additive `db/2026-10-29-smtp.sql` migration advances the schema to v0.0.8. A trigger atomically reserves quota on first submission; identical MIME and recipient lists share an idempotency key. Definite provider rejection refunds the reservation once. Uncertain responses retain it and return SMTP 451 so clients can retry; retries reuse the provider key without charging again. An unresolved attempt older than 23 hours is held for operator review instead of risking duplicate delivery. Sent archives store the original MIME and are visible in webmail/IMAP; disable redundant client-side Sent uploads because IMAP APPEND is unsupported. Metadata for submission deduplication is retained until mailbox deletion.
+
+SMTP tests use a synthetic provider: they cover TLS authentication, relay/sender restrictions, multi-recipient MIME, failed delivery responses, quotas, retry idempotency and archival. Public deployment checks verify TLS, authentication and denied sending with an isolated unapproved fixture. No real external delivery is performed automatically.
+
+The deployment also exposes an implicit-TLS SMTP fallback on 2465 (`SMTP_ALT_PORT`) for networks that cannot connect to 465. Both listeners share authentication/connection limits and the same certificate. Set the alternate port in both the Worker and gateway environment; no plaintext/STARTTLS listener is provided.

@@ -4,6 +4,7 @@ import { useMessage } from 'naive-ui'
 import { useI18n } from 'vue-i18n'
 import { useGlobalState } from '../store'
 import SafeMail from './SafeMail.vue';
+import PostalMime from 'postal-mime';
 import { useIsMobile } from '../utils/composables'
 import { utcToLocalDate } from '../utils';
 
@@ -86,10 +87,16 @@ const refresh = async () => {
     const { results, count: totalCount } = await props.fetchMailData(
       pageSize.value, (page.value - 1) * pageSize.value
     );
-    data.value = results.map((item) => {
+    data.value = await Promise.all(results.map(async (item) => {
       try {
         const data = JSON.parse(item.raw);
-        if (data.version == "v2") {
+        if (data.version === 'smtp-v1') {
+          const parsed = await PostalMime.parse(Uint8Array.from(atob(data.mime_base64), c => c.charCodeAt(0)));
+          item.to_mail = data.to_mail;
+          item.subject = parsed.subject || data.subject;
+          item.is_html = Boolean(parsed.html);
+          item.content = parsed.html || parsed.text || '';
+        } else if (data.version == "v2") {
           item.to_mail = data.to_name ? `${data.to_name} <${data.to_mail}>` : data.to_mail;
           item.subject = data.subject;
           item.is_html = data.is_html;
@@ -108,7 +115,7 @@ const refresh = async () => {
         console.log(error);
       }
       return item;
-    });
+    }));
     if (totalCount > 0) {
       count.value = totalCount;
     }

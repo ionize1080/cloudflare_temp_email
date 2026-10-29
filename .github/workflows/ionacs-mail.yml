@@ -29,6 +29,7 @@ jobs:
           python-version: "3.12"
       - run: pip install -r imap_gateway/requirements.txt
       - run: python checks/imap_protocol_test.py
+      - run: python checks/smtp_protocol_test.py
       - run: node --test checks/*.test.mjs
       - run: pnpm --dir worker lint
       - run: pnpm --dir worker exec wrangler deploy --config wrangler.production.jsonc --dry-run --outdir dist --minify

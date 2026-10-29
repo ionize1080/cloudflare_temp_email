@@ -13,6 +13,8 @@ type Bindings = {
     IMAP_GATEWAY_SECRET: string | undefined
     IMAP_HOST: string | undefined
     IMAP_PORT: string | number | undefined
+    SMTP_PORT: string | number | undefined
+    SMTP_ALT_PORT: string | number | undefined
     SEND_MAIL: any
     ASSETS: Fetcher
     AI: Ai

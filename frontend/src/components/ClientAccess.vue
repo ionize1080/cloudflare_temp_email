@@ -19,15 +19,16 @@ onMounted(load);
     <div class="client-title"><h3>账号密码</h3><button class="text-button" @click="passwordOpen = !passwordOpen">设置 / 修改登录密码</button></div>
     <p class="muted">登录账号：{{ settings.address }}。已有邮箱可在这里设置密码。</p>
     <form v-if="passwordOpen" @submit.prevent="savePassword" class="client-form"><label>新密码<input v-model="password" type="password" required minlength="12" maxlength="128" autocomplete="new-password" placeholder="12–128 个字符" /></label><label>确认密码<input v-model="confirm" type="password" required minlength="12" maxlength="128" autocomplete="new-password" /></label><small>修改后将撤销所有 IMAP 客户端专用密码，需重新生成。</small><button class="primary-button" :disabled="busy">保存密码</button></form>
-    <div class="client-title"><h3>第三方客户端 · IMAP</h3><button class="text-button" :disabled="busy" @click="load">刷新状态</button></div>
+    <div class="client-title"><h3>第三方客户端 · IMAP / SMTP</h3><button class="text-button" :disabled="busy" @click="load">刷新状态</button></div>
     <template v-if="data">
       <p v-if="data.state === 'pending'" role="status">申请已提交，等待管理员审批。</p>
       <template v-else-if="data.state !== 'approved'"><p class="muted">需先申请 IMAP 权限。开通后可生成独立的客户端密码；发件权限另行申请。</p><button class="outline-button" :disabled="busy" @click="request">{{ data.state === 'disabled' ? '重新申请 IMAP 权限' : '申请 IMAP 权限' }}</button></template>
       <template v-else>
         <p class="client-approved">IMAP 权限已开通</p>
         <p v-if="!data.available" class="muted">管理员正在配置服务入口，准备完成后会显示连接信息。</p>
-        <dl v-else class="client-config"><dt>服务器</dt><dd>{{ data.host }}</dd><dt>端口 / 安全</dt><dd>{{ data.port }} / SSL/TLS</dd><dt>用户名</dt><dd>{{ settings.address }}</dd><dt>密码</dt><dd>下方生成的客户端专用密码</dd></dl>
-        <p class="muted">支持收件箱、已发送、已读标记与删除同步。IMAP 用于收信，发送邮件请使用网页邮箱。</p>
+        <dl v-else class="client-config"><dt>收信服务器</dt><dd>{{ data.host }}</dd><dt>IMAP 端口</dt><dd>{{ data.port }} / SSL/TLS</dd><template v-if="data.smtp_enabled"><dt>发信服务器</dt><dd>{{ data.host }}</dd><dt>SMTP 端口</dt><dd>{{ data.smtp_port }} / SSL/TLS · 需要身份验证<span v-if="data.smtp_alt_port">；备用 {{ data.smtp_alt_port }}（465 无法连接时使用，同样选择 SSL/TLS）</span></dd></template><dt>用户名</dt><dd>{{ settings.address }}</dd><dt>收发信密码</dt><dd>下方生成的客户端专用密码</dd></dl>
+        <p class="muted">收信与发信使用相同的完整邮箱地址和专用密码。SMTP 发信还需管理员开通发件权限并有剩余额度。</p>
+        <p v-if="data.smtp_enabled" class="muted">每封邮件含附件最多 1 MiB、最多 20 位收件人，按收件人数扣减发件额度。至少填写一位“收件人”，可附加抄送、密送。服务器会保存已发送副本，可关闭客户端重复保存；暂不支持自建文件夹。</p>
         <form @submit.prevent="generate" class="client-create"><input v-model="label" maxlength="50" required aria-label="客户端名称" placeholder="客户端名称，例如 Outlook 笔记本" /><button class="outline-button" :disabled="busy || data.passwords.length >= 5">生成专用密码</button></form>
         <ul class="client-passwords"><li v-for="item in data.passwords" :key="item.id"><span><b>{{ item.label }}</b><small>{{ item.last_used_at ? '最近使用（UTC）：' + item.last_used_at : '尚未使用' }}</small></span><n-popconfirm @positive-click="revoke(item.id)" positive-text="撤销" negative-text="取消"><template #trigger><button class="text-button" :disabled="busy">撤销</button></template>撤销后此客户端将无法继续连接，需要重新生成密码。</n-popconfirm></li></ul>
         <small class="muted">最多 5 个客户端。停用 IMAP 或修改登录密码会撤销所有客户端密码。</small>

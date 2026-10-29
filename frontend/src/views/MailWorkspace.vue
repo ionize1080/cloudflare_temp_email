@@ -61,6 +61,10 @@ async function refresh() {
       if (loadedFolder !== 'sent') return processItem({ ...item });
       try {
         const data = JSON.parse(item.raw);
+        if (data.version === 'smtp-v1') {
+          const parsed = await processItem({ ...item, raw: Uint8Array.from(atob(data.mime_base64), c => c.charCodeAt(0)) });
+          return { ...parsed, to: data.to_mail };
+        }
         const content = data.version === 'v2' ? data.content : data.content?.[0]?.value;
         return { ...item, to: data.to_mail || data.personalizations?.[0]?.to?.[0]?.email, subject: data.subject, text: data.is_html ? '' : content, message: data.is_html || data.content?.[0]?.type === 'text/html' ? content : '', attachments: [] };
       } catch { return { ...item, subject: '无法解析的邮件', text: item.raw, attachments: [] }; }

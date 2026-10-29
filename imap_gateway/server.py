@@ -1,5 +1,6 @@
 """IONACS TLS IMAP gateway. Email remains in Workers/D1; no on-disk mail cache."""
 import copy
+import base64
 import json
 import os
 import time
@@ -55,6 +56,7 @@ class Gateway:
 
 def sent_bytes(item):
     data = json.loads(item['raw'])
+    if data.get('version') == 'smtp-v1': return base64.b64decode(data['mime_base64'], validate=True)
     msg = EmailMessage(policy=policy.SMTP)
     if data.get('version') == 'v2':
         msg['From'] = formataddr((data.get('from_name', ''), item['address']))
@@ -377,7 +379,13 @@ def main():
     reactor.suggestThreadPoolSize(4)
     reactor.listenSSL(int(os.environ.get('IMAP_PORT', '993')), Factory(Checker(base, headers)), context,
                       interface=os.environ.get('IMAP_BIND', '0.0.0.0'))
-    print('IONACS TLS IMAP gateway started', flush=True)
+    if os.environ.get('SMTP_PORT'):
+        try: from .smtp_server import SmtpFactory
+        except ImportError: from smtp_server import SmtpFactory
+        submission_factory = SmtpFactory(Checker(base, headers))
+        for port in {int(os.environ['SMTP_PORT']), int(os.environ.get('SMTP_ALT_PORT') or os.environ['SMTP_PORT'])}:
+            reactor.listenSSL(port, submission_factory, context, interface=os.environ.get('IMAP_BIND', '0.0.0.0'))
+    print('IONACS TLS mail gateway started', flush=True)
     reactor.run()
 
 

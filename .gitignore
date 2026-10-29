@@ -134,6 +134,7 @@ dist
 .pnp.*
 
 .wrangler
+.cloudflare/
 wrangler.toml
 .dev.vars
 .private/

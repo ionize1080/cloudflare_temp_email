@@ -59,7 +59,7 @@ http.createServer(async (req, res) => {
   }
   if (req.headers.authorization !== 'Bearer preview-only') return json({ error: '请输入测试凭据 preview-only' }, 401);
   const current = sql.prepare('SELECT id FROM address WHERE name = ?').get(activeAddress);
-  if (url.pathname === '/api/imap/settings') return json({ state: imapState(await db.prepare('SELECT * FROM imap_access WHERE address_id = ?').bind(current.id).first()), passwords: sql.prepare('SELECT id,label,created_at,last_used_at FROM imap_passwords WHERE address_id = ?').all(current.id), host: 'imap-test.example.com', port: 993, available: true });
+  if (url.pathname === '/api/imap/settings') return json({ state: imapState(await db.prepare('SELECT * FROM imap_access WHERE address_id = ?').bind(current.id).first()), passwords: sql.prepare('SELECT id,label,created_at,last_used_at FROM imap_passwords WHERE address_id = ?').all(current.id), host: 'imap-test.example.com', port: 993, smtp_port: 465, smtp_alt_port: 2465, smtp_enabled: true, available: true });
   if (url.pathname === '/api/imap/request') return json({ state: imapState(await requestImap(db, current.id)) });
   if (url.pathname === '/api/imap/passwords' && req.method === 'POST') { try { return json(await createImapPassword(db, current.id, (await body()).label)); } catch (e) { return json({ error: e.message }, 400); } }
   if (url.pathname.startsWith('/api/imap/passwords/') && req.method === 'DELETE') { sql.prepare('DELETE FROM imap_passwords WHERE id = ? AND address_id = ?').run(url.pathname.split('/').pop(), current.id); return json({ success: true }); }
