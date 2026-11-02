@@ -43,7 +43,13 @@ try{
  await run(['secret','put','TURNSTILE_SECRET_KEY','--config',configPath],secret+'\n');
  await writeFile(configPath,JSON.stringify(config,null,2));
  await run(['deploy','--config',configPath,'--minify']);
- const response=await fetch('https://ionacs.com/api/config',{signal:AbortSignal.timeout(20000)});
- if(!response.ok||(await response.json()).siteKey!==sitekey)throw new Error('Deployment completed but public health verification failed. Inspect DNS and existing Access policies.');
+ // New custom-domain DNS and certificates can take time to propagate.
+ let healthy=false;
+ for(let attempt=0;attempt<12;attempt++){
+  try{const response=await fetch('https://ionacs.com/api/config',{signal:AbortSignal.timeout(10000)});healthy=response.ok&&(await response.json()).siteKey===sitekey;}catch{}
+  if(healthy)break;
+  if(attempt<11){console.log('Waiting for public domain readiness...');await new Promise(resolve=>setTimeout(resolve,15000));}
+ }
+ if(!healthy)throw new Error('Deployment completed but public health verification failed. Inspect DNS and existing Access policies.');
  console.log('Verified deployment: https://ionacs.com');
 }finally{await unlink(configPath).catch(()=>{});}
