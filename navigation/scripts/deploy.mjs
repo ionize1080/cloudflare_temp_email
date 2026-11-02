@@ -2,8 +2,8 @@ import {readFile,writeFile,unlink} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 import {refreshWallpapers} from '../src/wallpapers.mjs';
 const config=JSON.parse(await readFile(new URL('../wrangler.json',import.meta.url),'utf8'));
-const account=process.env.CLOUDFLARE_ACCOUNT_ID||config.account_id;
-const token=process.env.CLOUDFLARE_API_TOKEN;
+const account=config.account_id; // The mailbox deployment config is authoritative.
+const token=process.env.CLOUDFLARE_API_TOKEN?.trim();
 if(!token)throw new Error('Missing repository secret CLOUDFLARE_API_TOKEN. Configure Cloudflare deployment access before publishing.');
 const base=`https://api.cloudflare.com/client/v4/accounts/${account}`;
 async function cf(path,options={}){
