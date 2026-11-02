@@ -1,3 +1,4 @@
+import { deploymentEnvironment } from './deploy-env.mjs';
 import {readFile,writeFile,unlink} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 import {refreshWallpapers} from '../src/wallpapers.mjs';
@@ -10,7 +11,7 @@ async function cf(path,options={}){
  const res=await fetch(base+path,{...options,headers:{Authorization:`Bearer ${token}`,...options.headers},signal:AbortSignal.timeout(30000)});
  const data=await res.json();if(!res.ok||!data.success)throw new Error(`Cloudflare ${path.split('?')[0]}: ${(data.errors||[]).map(e=>e.message).join('; ')||res.status}`);return data.result;
 }
-function run(args,input,cwd=process.cwd()){return new Promise((resolve,reject)=>{const child=spawn(process.execPath,[new URL('../node_modules/wrangler/bin/wrangler.js',import.meta.url).pathname,...args],{cwd,stdio:[input?'pipe':'ignore','inherit','inherit'],env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false',CLOUDFLARE_ACCOUNT_ID:account,CLOUDFLARE_API_TOKEN:token}});if(input)child.stdin.end(input);child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error(`Deployment command failed (${code})`)));});}
+function run(args,input,cwd=process.cwd(),mailTarget=false){const deploymentEnv=deploymentEnvironment(process.env,account,token,mailTarget);return new Promise((resolve,reject)=>{const child=spawn(process.execPath,[new URL('../node_modules/wrangler/bin/wrangler.js',import.meta.url).pathname,...args],{cwd,stdio:[input?'pipe':'ignore','inherit','inherit'],env:deploymentEnv});if(input)child.stdin.end(input);child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error(`Deployment command failed (${code})`)));});}
 const database=config.d1_databases[0].database_id;
 async function sql(statement,params=[]){const result=await cf(`/d1/database/${database}/query`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sql:statement,params})});if(result.some(r=>!r.success))throw new Error('D1 query failed');return result;}
 // Preflight before altering routing or publishing: verify the existing administrator identity.
@@ -42,7 +43,7 @@ try{
  else if(!existingWorker.ok)throw new Error('Unable to inspect existing Worker');
  await run(['secret','put','TURNSTILE_SECRET_KEY','--config',configPath],secret+'\n');
  // Publish the mailbox handoff receiver before navigation starts issuing tickets.
- await run(['deploy','--config','../worker/wrangler.production.jsonc','--minify']);
+ await run(['deploy','--config','../worker/wrangler.production.jsonc','--minify'],undefined,process.cwd(),true);
  await run(['pages','deploy','../frontend/dist','--project-name','frontend','--branch','main'],undefined,new URL('../../pages/',import.meta.url).pathname);
  await writeFile(configPath,JSON.stringify(config,null,2));
  await run(['deploy','--config',configPath,'--minify']);
