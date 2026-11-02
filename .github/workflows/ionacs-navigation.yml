@@ -4,14 +4,12 @@ on:
     branches: [main]
     paths:
       - 'navigation/**'
-      - 'shared/passwords.mjs'
-      - 'shared/security.mjs'
+      - 'shared/**'
       - '.github/workflows/ionacs-navigation.yml'
   pull_request:
     paths:
       - 'navigation/**'
-      - 'shared/passwords.mjs'
-      - 'shared/security.mjs'
+      - 'shared/**'
       - '.github/workflows/ionacs-navigation.yml'
   workflow_dispatch:
 permissions:

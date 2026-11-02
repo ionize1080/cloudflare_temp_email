@@ -1,3 +1,5 @@
+import { NAV_SESSION_SECONDS, MAIL_SESSION_HOURS, createMailTicket } from '../../shared/navigation-sso.mjs';
+import { initializeBookmarks } from './bookmarks.mjs';
 import { hashPassword, verifyPassword, passwordDigest, randomAppPassword } from '../../shared/passwords.mjs';
 
 import { refreshWallpapers, serveWallpaper } from './wallpapers.mjs';
@@ -6,7 +8,7 @@ const json = (body, status = 200, headers = {}) => Response.json(body, { status,
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const now = () => Math.floor(Date.now() / 1000);
 const COOKIE = '__Host-ionacs_session';
-const cookie = (token, age = 604800) => `${COOKIE}=${token}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${age}`;
+const cookie = (token, age = NAV_SESSION_SECONDS) => `${COOKIE}=${token}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${age}`;
 const tokenOf = req => (req.headers.get('Cookie') || '').split(';').map(v => v.trim()).find(v => v.startsWith(COOKIE + '='))?.slice(COOKIE.length + 1) || '';
 const boundedString = (value, max) => typeof value === 'string' && value.length <= max;
 export function safeURL(value, httpsOnly = false) {
@@ -39,16 +41,17 @@ export async function challenge(req, env, token, action) {
   const result = await response.json();
   if (!result.success || result.hostname !== new URL(env.APP_ORIGIN).hostname || result.action !== action) fail('验证已过期或未通过，请重新验证', 403);
 }
-async function session(req, env, required = true) {
+async function session(req, env, required = true, state = {}) {
   const token = tokenOf(req);
   if (!/^[a-f0-9]{48}$/.test(token)) { if (required) fail('请先登录', 401); return null; }
-  const row = await env.DB.prepare(`SELECT a.id, a.name, a.password, s.password_version FROM nav_sessions s JOIN address a ON a.id = s.address_id WHERE s.token_hash = ? AND s.expires_at > ?`).bind(await passwordDigest(token), now()).first();
+  const row = await env.DB.prepare(`SELECT a.id, a.name, a.password, s.password_version, s.expires_at FROM nav_sessions s JOIN address a ON a.id = s.address_id WHERE s.token_hash = ? AND s.expires_at > ?`).bind(await passwordDigest(token), now()).first();
   if (!row || row.password_version !== await passwordDigest(row.password || '')) { if (required) fail('登录已过期，请重新登录', 401); return null; }
+  if(row.expires_at < now()+NAV_SESSION_SECONDS-86400){await env.DB.prepare('UPDATE nav_sessions SET expires_at=? WHERE token_hash=?').bind(now()+NAV_SESSION_SECONDS,await passwordDigest(token)).run();state.cookie=cookie(token);}
   return { id: row.id, email: row.name, admin: row.name === env.ADMIN_EMAIL };
 }
 async function issueSession(env, row) {
   const token = randomAppPassword();
-  await env.DB.prepare('INSERT INTO nav_sessions(token_hash,address_id,password_version,expires_at) VALUES(?,?,?,?)').bind(await passwordDigest(token), row.id, await passwordDigest(row.password), now() + 604800).run();
+  await env.DB.prepare('INSERT INTO nav_sessions(token_hash,address_id,password_version,expires_at) VALUES(?,?,?,?)').bind(await passwordDigest(token), row.id, await passwordDigest(row.password), now() + NAV_SESSION_SECONDS).run();
   return json({ user: { id: row.id, email: row.name, admin: row.name === env.ADMIN_EMAIL } }, 200, { 'Set-Cookie': cookie(token) });
 }
 export async function register(env, data) {
@@ -78,7 +81,7 @@ async function wallpapers(env, ctx) {
   else if (rows[0].fetched_at < now() - 3600) ctx.waitUntil(refreshWallpapers(env).catch(() => console.warn('Wallpaper refresh unavailable')));
   return json({ images: rows.map(r => { const item = JSON.parse(r.payload); return { ...item, originalURL: item.url, url: '/api/wallpaper/' + item.day, thumbnail: '/api/wallpaper/' + item.day + '?size=thumb' }; }) });
 }
-async function handle(req, env, ctx) {
+async function handle(req, env, ctx, state) {
   const url = new URL(req.url), path = url.pathname;
   if (!path.startsWith('/api/')) return env.ASSETS.fetch(req);
   if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -87,7 +90,7 @@ async function handle(req, env, ctx) {
   }
   if (path === '/api/config' && req.method === 'GET') return json({ siteKey: env.TURNSTILE_SITE_KEY || '', mailURL: 'https://mail.ionacs.com', registration: 'invite' });
   
-  if (path === '/api/me' && req.method === 'GET') return json({ user: await session(req, env, false) });
+  if (path === '/api/me' && req.method === 'GET') return json({ user: await session(req, env, false, state) });
   if (['/api/login', '/api/register'].includes(path) && req.method === 'POST') {
     const data = await body(req);
     const email = typeof data.email === 'string' ? data.email.trim().toLowerCase() : '';
@@ -104,12 +107,17 @@ async function handle(req, env, ctx) {
     await env.DB.prepare('DELETE FROM nav_sessions WHERE token_hash=?').bind(await passwordDigest(tokenOf(req))).run();
     return json({ success: true }, 200, { 'Set-Cookie': cookie('', 0) });
   }
-  const user = await session(req, env);
+  const user = await session(req, env, true, state);
+  if(path==='/api/mail-link'&&req.method==='POST'){
+    const prefs=await env.DB.prepare('SELECT mail_session_hours FROM nav_preferences WHERE address_id=?').bind(user.id).first();
+    const ticket=await createMailTicket(env.DB,tokenOf(req),prefs?.mail_session_hours||24);
+    return json({url:'https://mail.ionacs.com/#ionacs-ticket='+ticket});
+  }
   if (path === '/api/wallpapers' && req.method === 'GET') return wallpapers(env,ctx);
   const wallpaper = /^\/api\/wallpaper\/(\d{8})$/.exec(path);
   if (wallpaper && req.method === 'GET') return serveWallpaper(req,env,ctx,wallpaper[1],url.searchParams.get('size') === 'thumb' ? 'thumb' : 'large');
   if (path === '/api/bookmarks') {
-    if (req.method === 'GET') return json({ bookmarks: (await env.DB.prepare('SELECT id,title,url,position FROM nav_bookmarks WHERE address_id=? ORDER BY position,created_at,id').bind(user.id).all()).results });
+    if (req.method === 'GET') { await initializeBookmarks(env.DB,user.id); return json({ bookmarks: (await env.DB.prepare('SELECT id,title,url,position FROM nav_bookmarks WHERE address_id=? ORDER BY position,created_at,id').bind(user.id).all()).results }); }
     if (req.method === 'POST') {
       const data = await body(req);
       if (!boundedString(data.title, 80) || !data.title.trim()) fail('名称需要 1–80 个字符');
@@ -125,12 +133,13 @@ async function handle(req, env, ctx) {
     if (req.method === 'PATCH') { const data = await body(req); if (!boundedString(data.title,80) || !data.title.trim()) fail('名称需要 1–80 个字符'); const result = await env.DB.prepare('UPDATE nav_bookmarks SET title=?,url=? WHERE id=? AND address_id=?').bind(data.title.trim(),safeURL(data.url),bookmark[1],user.id).run(); if (!result.meta.changes) fail('收藏不存在',404); return json({ success: true }); }
   }
   if (path === '/api/preferences') {
-    if (req.method === 'GET') return json({ preferences: await env.DB.prepare('SELECT wallpaper_mode,wallpaper_url,color,search_engine FROM nav_preferences WHERE address_id=?').bind(user.id).first() });
+    if (req.method === 'GET') return json({ preferences: await env.DB.prepare('SELECT wallpaper_mode,wallpaper_url,color,search_engine,mail_session_hours FROM nav_preferences WHERE address_id=?').bind(user.id).first() });
     if (req.method === 'PUT') {
       const d = await body(req);
+      if(d.mail_session_hours!==undefined&&!MAIL_SESSION_HOURS.includes(d.mail_session_hours))fail('邮箱登录有效期不正确');
       if (!['bing','image','color'].includes(d.wallpaper_mode) || !['google','bing','baidu'].includes(d.search_engine) || !/^#[a-fA-F0-9]{6}$/.test(d.color)) fail('设置格式不正确');
       const image = d.wallpaper_mode === 'image' ? (/^\/api\/wallpaper\/\d{8}$/.test(d.wallpaper_url) ? d.wallpaper_url : safeURL(d.wallpaper_url,true)) : '';
-      await env.DB.prepare('INSERT INTO nav_preferences(address_id,wallpaper_mode,wallpaper_url,color,search_engine) VALUES(?,?,?,?,?) ON CONFLICT(address_id) DO UPDATE SET wallpaper_mode=excluded.wallpaper_mode,wallpaper_url=excluded.wallpaper_url,color=excluded.color,search_engine=excluded.search_engine').bind(user.id,d.wallpaper_mode,image,d.color,d.search_engine).run();
+      await env.DB.prepare('INSERT INTO nav_preferences(address_id,wallpaper_mode,wallpaper_url,color,search_engine,mail_session_hours) VALUES(?,?,?,?,?,?) ON CONFLICT(address_id) DO UPDATE SET wallpaper_mode=excluded.wallpaper_mode,wallpaper_url=excluded.wallpaper_url,color=excluded.color,search_engine=excluded.search_engine,mail_session_hours=excluded.mail_session_hours').bind(user.id,d.wallpaper_mode,image,d.color,d.search_engine,d.mail_session_hours||24).run();
       return json({ success: true });
     }
   }
@@ -150,15 +159,16 @@ async function handle(req, env, ctx) {
 }
 export default {
   async fetch(req,env,ctx) {
-    let res;
-    try { res = await handle(req,env,ctx); }
+    let res;const state={};
+    try { res = await handle(req,env,ctx,state); }
     catch (err) { if (!err.status) console.error('Navigation request failed'); res = json({ error: err.status ? err.message : '服务暂时不可用，请稍后重试' }, err.status || 503); }
     res = new Response(res.body,res);
+    if(state.cookie&&!res.headers.has('Set-Cookie'))res.headers.set('Set-Cookie',state.cookie);
     res.headers.set('X-Content-Type-Options','nosniff'); res.headers.set('X-Frame-Options','DENY'); res.headers.set('Referrer-Policy','no-referrer');
     res.headers.set('Permissions-Policy','camera=(), microphone=(), geolocation=()'); res.headers.set('Strict-Transport-Security','max-age=31536000');
     res.headers.set('Content-Security-Policy',"default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
     if (new URL(req.url).pathname.startsWith('/api/') && !res.headers.has('Cache-Control')) res.headers.set('Cache-Control','private, no-store');
     return res;
   },
-  async scheduled(event,env,ctx) { ctx.waitUntil(Promise.all([refreshWallpapers(env),env.DB.prepare('DELETE FROM nav_sessions WHERE expires_at < ?').bind(now()).run()])); }
+  async scheduled(event,env,ctx) { ctx.waitUntil(Promise.all([refreshWallpapers(env),env.DB.prepare('DELETE FROM nav_mail_tickets WHERE expires_at < ?').bind(now()).run(),env.DB.prepare('DELETE FROM nav_sessions WHERE expires_at < ?').bind(now()).run()])); }
 };
