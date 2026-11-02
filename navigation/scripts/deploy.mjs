@@ -4,7 +4,7 @@ import {refreshWallpapers} from '../src/wallpapers.mjs';
 const config=JSON.parse(await readFile(new URL('../wrangler.json',import.meta.url),'utf8'));
 const account=config.account_id; // The mailbox deployment config is authoritative.
 const token=process.env.CLOUDFLARE_API_TOKEN?.trim();
-if(!token)throw new Error('Missing repository secret CLOUDFLARE_API_TOKEN. Configure Cloudflare deployment access before publishing.');
+if(!token)throw new Error('Missing CLOUDFLARE_API_TOKEN. Configure the Cloudflare Workers Builds deployment token.');
 const base=`https://api.cloudflare.com/client/v4/accounts/${account}`;
 async function cf(path,options={}){
  const res=await fetch(base+path,{...options,headers:{Authorization:`Bearer ${token}`,...options.headers},signal:AbortSignal.timeout(30000)});
@@ -23,7 +23,7 @@ if(!sitekey||!secret){
  const widget=existing?await cf(`/challenges/widgets/${existing.sitekey}`):await cf('/challenges/widgets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'IONACS Navigation',domains:['ionacs.com'],mode:'managed',bot_fight_mode:false})});
  sitekey=widget.sitekey;secret=widget.secret;
 }
-if(!sitekey||!secret)throw new Error('Turnstile keys unavailable. Set TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY repository secrets or grant Account Turnstile Edit to the deployment token.');
+if(!sitekey||!secret)throw new Error('Turnstile keys unavailable. Set TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY build secrets or grant Account Turnstile Edit to the deployment token.');
 // Prevent secret exposure through logs, including verbose CLI errors.
 if(process.env.GITHUB_ACTIONS)console.log('::add-mask::'+secret);
 config.vars.TURNSTILE_SITE_KEY=sitekey;config.account_id=account;

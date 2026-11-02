@@ -1,6 +1,6 @@
 # IONACS Navigation
 
-Chrome-new-tab-inspired navigation at `https://ionacs.com`, published independently from the existing mailbox application. The source stays in this repository to share the mailbox password implementation and existing deployment secrets.
+Chrome-new-tab-inspired navigation at `https://ionacs.com`, published independently from the existing mailbox application. The source stays in this repository to share the mailbox password implementation and deploy through Cloudflare Workers Builds.
 
 ## Behavior
 
@@ -26,8 +26,10 @@ Node 22; `npm ci`, `npm run check`, `npm test`, `npm run build`. Tests use an is
 
 ## Automatic publication
 
-The `IONACS Navigation deploy` workflow checks changes and automatically deploys successful main-branch changes. It applies only additive navigation migrations via the separate `nav_migrations` table, warms wallpaper cache, prepares a managed Turnstile widget, uploads its secret, and attaches the root domain using Cloudflare Worker Custom Domains. Existing mailbox routing and email records are not edited.
+Cloudflare Workers Builds watches `main` in this repository, rooted at `navigation`. It runs syntax checks, tests, a dry build and dependency auditing before `npm run deploy`. The GitHub `IONACS Navigation checks` workflow also verifies pushes and pull requests. Publishing uses a dedicated Cloudflare build token stored in Cloudflare, independent of the repository's old deployment secrets.
 
-Repository secrets: existing `CLOUDFLARE_API_TOKEN`; the account ID comes from the checked-in mailbox deployment configuration. The token needs Workers Scripts edit, D1 edit, Workers KV edit, the applicable domain deployment permissions, and Account Turnstile edit. Alternatively set `TURNSTILE_SITE_KEY` plus `TURNSTILE_SECRET_KEY` for a pre-created managed widget allowing exactly `ionacs.com`. Deployment fails closed if permissions/credentials are missing. Secrets are passed in memory/stdin and never committed. DNS/Access conflicts require review rather than disabling existing protections.
+Deployment applies only additive navigation migrations via the separate `nav_migrations` table, warms wallpaper cache, prepares a managed Turnstile widget, uploads its secret, and attaches the root domain using Cloudflare Worker Custom Domains. Existing mailbox routing and email records are not edited.
 
-Deployment is not verified merely because the files exist: inspect the workflow result and the public health check. To roll back, revert a navigation commit and let the workflow deploy the previous code. Additive navigation tables are retained; no mail records are dropped.
+The account ID comes from the checked-in mailbox deployment configuration. The build token has Workers Scripts, D1, Workers KV and Turnstile write permissions for that account, plus Workers Routes write and Zone read permissions for ionacs.com. Secrets are passed in memory/stdin and never committed. DNS/Access conflicts fail deployment rather than disabling protections.
+
+Inspect Workers Builds results and the public health check to verify publication. To roll back, revert a navigation commit and let Workers Builds deploy the previous code. Additive navigation tables are retained; no mail records are dropped.
