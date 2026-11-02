@@ -19,14 +19,14 @@ const props = defineProps({
     },
     newAddressPath: {
         type: Function,
-        default: async (address_name, domain, cf_token, password) => {
+        default: async (address_name, domain, cf_token, password, invitation_code) => {
             return await api.fetch("/api/new_address", {
                 method: "POST",
                 body: JSON.stringify({
                     name: address_name,
                     domain: domain,
                     cf_token: cf_token,
-                    password,
+                    password, invitation_code,
                 }),
             });
         },
@@ -51,7 +51,7 @@ const cfToken = ref("")
 const loginMethod = ref('credential') // 'credential' or 'password'
 const loginAddress = ref('')
 const loginPassword = ref('')
-const registerPassword = ref(''), confirmPassword = ref('')
+const registerPassword = ref(''), confirmPassword = ref(''), invitationCode = ref('')
 
 // 根据 openSettings 初始化登录方式
 const initLoginMethod = () => {
@@ -202,7 +202,7 @@ const newEmail = async () => {
             nameToSend,
             emailDomain.value,
             cfToken.value,
-            registerPassword.value
+            registerPassword.value, invitationCode.value
         );
         jwt.value = res["jwt"];
         addressPassword.value = res["password"] || '';
@@ -314,8 +314,8 @@ onMounted(async () => {
             <n-tab-pane v-if="showNewAddressTab" name="register" :tab="t('getNewEmail')">
                 <n-spin :show="generateNameLoading">
                     <n-form>
-                        <p class="muted">选择邮箱名称并设置密码。完整邮箱地址就是你的登录账号；发件与 IMAP 需要分别申请权限。</p>
-                        <n-input-group>
+                        <p class="muted">使用管理员提供的一次性邀请码，选择邮箱名称并设置密码。完整邮箱地址就是你的登录账号；发件与 IMAP 需要分别申请权限。</p>
+                        <n-input-group class="registration-address">
                             <n-input-group-label v-if="addressPrefix">
                                 {{ addressPrefix }}
                             </n-input-group-label>
@@ -326,6 +326,7 @@ onMounted(async () => {
                             <n-select v-model:value="emailDomain" :consistent-menu-width="false"
                                 :options="domainsOptions" />
                         </n-input-group>
+                        <n-form-item-row label="邀请码" required style="margin-top:20px"><n-input v-model:value="invitationCode" :maxlength="32" placeholder="输入 32 位邀请码" :input-props="{ autocomplete: 'off' }" /></n-form-item-row>
                         <template v-if="openSettings.enableAddressPassword">
                             <n-form-item-row label="设置密码（12–128 位）" required style="margin-top:20px"><n-input v-model:value="registerPassword" type="password" :maxlength="128" show-password-on="click" :input-props="{ autocomplete: 'new-password' }" /></n-form-item-row>
                             <n-form-item-row label="确认密码" required><n-input v-model:value="confirmPassword" type="password" :maxlength="128" :input-props="{ autocomplete: 'new-password' }" @keydown.enter.prevent="newEmail" /></n-form-item-row>

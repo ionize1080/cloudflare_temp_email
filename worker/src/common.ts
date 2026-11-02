@@ -1,3 +1,4 @@
+import { registerInvitedAddress } from '../../shared/invitations.mjs';
 import { Context } from 'hono';
 import { Jwt } from 'hono/utils/jwt'
 
@@ -122,6 +123,7 @@ export const newAddress = async (
         enableCheckNameRegex = true,
         sourceMeta = null,
         password = null,
+        invitationCode = null,
     }: {
         name: string, domain: string | undefined | null,
         enablePrefix: boolean,
@@ -131,6 +133,7 @@ export const newAddress = async (
         enableCheckNameRegex?: boolean,
         sourceMeta?: string | undefined | null,
         password?: string | null,
+        invitationCode?: string | null,
     }
 ): Promise<{ address: string, jwt: string, password?: string | null }> => {
     const msgs = i18n.getMessagesbyContext(c);
@@ -182,6 +185,10 @@ export const newAddress = async (
     // create address
     name = name + "@" + domain;
     const suppliedHash = password ? await hashPassword(password) : null;
+    if (invitationCode !== null) {
+        try { await registerInvitedAddress(c.env.DB, invitationCode, name, sourceMeta, suppliedHash); }
+        catch { throw new Error('邀请码无效、已使用、已过期，或邮箱名称已被占用'); }
+    } else {
     try {
         // Try insert with source_meta field first
         const result = await c.env.DB.prepare(
@@ -208,6 +215,7 @@ export const newAddress = async (
             throw new Error(msgs.FailedCreateAddressMsg)
         }
     }
+    }
     const address_id = await c.env.DB.prepare(
         `SELECT id FROM address where name = ?`
     ).bind(name).first<number>("id");
@@ -218,7 +226,8 @@ export const newAddress = async (
     // create jwt
     const jwt = await Jwt.sign({
         address: name,
-        address_id: address_id
+        address_id: address_id,
+        iat: Math.floor(Date.now()/1000), exp: Math.floor(Date.now()/1000)+30*86400
     }, c.env.JWT_SECRET, "HS256")
     return {
         jwt: jwt,

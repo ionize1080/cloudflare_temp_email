@@ -15,8 +15,8 @@ api.get('/admin/overview', async c => {
     const smtp = getJsonObjectValue<Record<string, unknown>>(c.env.SMTP_CONFIG) || {};
     return c.json({ counts, identity: c.get('accessEmail'), canonicalOrigin: MAIL_ORIGIN,
         security: {
-            accessVerified: true, accessIssuer: ACCESS_ISSUER,
-            adminCheckEnabled: !getBooleanValue(c.env.DISABLE_ADMIN_PASSWORD_CHECK),
+            accessVerified: false, invitationRequired: true, accessIssuer: ACCESS_ISSUER,
+            adminCheckEnabled: true,
             encryptedAdminSecret: Boolean(c.env.ADMIN_PASSWORDS_SECRET),
             adminCredentialConfigured: getAdminPasswords(c).length > 0,
             rateLimitEnabled: Boolean(c.env.RATE_LIMITER),

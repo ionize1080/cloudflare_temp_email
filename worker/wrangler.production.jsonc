@@ -8,7 +8,7 @@
     "nodejs_compat"
   ],
   "keep_vars": false,
-  "workers_dev": true,
+  "workers_dev": false,
   "preview_urls": false,
   "vars": {
     "TITLE": "IONACS Mail",
@@ -24,7 +24,8 @@
     "ENABLE_ADDRESS_PASSWORD": "true",
     "IMAP_PORT": 993,
     "SMTP_PORT": 465,
-    "SMTP_ALT_PORT": 2465
+    "SMTP_ALT_PORT": 2465,
+    "ATTACHMENT_ORIGIN": "https://status.ionacs.com"
   },
   "d1_databases": [
     {
@@ -68,5 +69,10 @@
       "enabled": true,
       "head_sampling_rate": 0.1
     }
+  },
+  "triggers": {
+    "crons": [
+      "17 * * * *"
+    ]
   }
 }

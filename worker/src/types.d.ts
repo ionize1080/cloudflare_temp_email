@@ -6,6 +6,8 @@ type UserRole = {
 
 type Bindings = {
     // bindings
+    ATTACHMENT_ORIGIN: string
+    ATTACHMENT_SECRET: string
     DB: D1Database
     KV: KVNamespace
     RATE_LIMITER: any

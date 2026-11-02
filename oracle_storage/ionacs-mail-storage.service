@@ -1,0 +1,26 @@
+[Unit]
+Description=IONACS Mail private attachment storage
+After=network.target
+[Service]
+User=mailstorage
+Group=mailstorage
+ExecStart=/usr/bin/python3 /opt/ionacs-mail-storage/server.py
+LoadCredential=token:/etc/ionacs-mail-storage/token
+StateDirectory=ionacs-mail-storage
+Restart=on-failure
+RestartSec=3
+MemoryMax=128M
+CPUQuota=35%
+TasksMax=16
+LimitNOFILE=128
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_UNIX
+UMask=0077
+[Install]
+WantedBy=multi-user.target

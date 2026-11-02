@@ -2,6 +2,7 @@
 import http from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
+import { createInvitations } from '../shared/invitations.mjs';
 import { hashPassword, verifyPassword } from '../shared/passwords.mjs';
 import { requestImap, reviewImap, createImapPassword, imapState } from '../shared/imap-access.mjs';
 import { requestSenderAccess, updateSenderAccess, senderState } from '../shared/sender-access.mjs';
@@ -38,6 +39,10 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/address_login') { const input = await body(); const row = sql.prepare('SELECT * FROM address WHERE name = ?').get(input.email); if (!await verifyPassword(input.password, row?.password)) return json({ error: '账号或密码错误' }, 401); activeAddress = row.name; return json({ jwt: 'preview-only', address: row.name }); }
   if (url.pathname.startsWith('/admin/')) {
     if (req.headers['x-admin-auth'] !== 'preview-admin') return json({ error: '本地管理员密码为 preview-admin' }, 401);
+    if (url.pathname === '/admin/invitations') {
+      if(req.method==='POST'){try{return json({codes:await createInvitations(db,(await body()).count,'preview-admin')});}catch(e){return json({error:e.message},400);}}
+      return json({results:sql.prepare('SELECT id,hint,expires_at,used_at,used_by,revoked_at FROM invitations ORDER BY created_at DESC LIMIT 100').all()});
+    }
     if (url.pathname === '/admin/imap') {
       if (req.method === 'POST') { try { await reviewImap(db, await body()); return json({ success: true }); } catch (e) { return json({ error: e.message }, 400); } }
       const rows = sql.prepare('SELECT a.id AS address_id, a.name AS address, i.*, (SELECT COUNT(*) FROM imap_passwords p WHERE p.address_id = a.id) AS clients FROM address a LEFT JOIN imap_access i ON a.id = i.address_id').all().map(row => ({ ...row, address_id: sql.prepare('SELECT id FROM address WHERE name = ?').get(row.address).id })).filter(row => (!url.searchParams.get('q') || row.address.includes(url.searchParams.get('q'))) && (url.searchParams.get('pending') !== '1' || row.requested_at));

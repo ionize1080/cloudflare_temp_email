@@ -17,6 +17,8 @@ api.get('/open_api/settings', async (c) => {
 
     return c.json({
         "title": c.env.TITLE,
+        "invitationRequired": true,
+        "maxAttachmentBytes": 25 * 1024 * 1024,
         "announcement": utils.getStringValue(c.env.ANNOUNCEMENT),
         "alwaysShowAnnouncement": utils.getBooleanValue(c.env.ALWAYS_SHOW_ANNOUNCEMENT),
         "prefix": utils.getStringValue(c.env.PREFIX),

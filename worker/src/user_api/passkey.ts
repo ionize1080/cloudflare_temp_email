@@ -61,7 +61,7 @@ export default {
         // Use SimpleWebAuthn's handy function to create registration options.
         const options = await generateRegistrationOptions({
             rpName: c.env.TITLE || "Temp Mail",
-            rpID: domain,
+            rpID: 'mail.ionacs.com',
             userID: new TextEncoder().encode(user.user_id.toString()),
             userName: user.user_email,
             userDisplayName: user.user_email,
@@ -87,7 +87,7 @@ export default {
                 if (payload.user_id !== user.user_id) return false;
                 return true;
             },
-            expectedOrigin: origin,
+            expectedOrigin: 'https://mail.ionacs.com',
             requireUserVerification: true,
         });
         const { verified, registrationInfo } = verification;
@@ -127,7 +127,7 @@ export default {
             iat: Math.floor(Date.now() / 1000),
         }, c.env.JWT_SECRET, "HS256")
         const options: PublicKeyCredentialRequestOptionsJSON = await generateAuthenticationOptions({
-            rpID: domain,
+            rpID: 'mail.ionacs.com',
             challenge: challenge,
             allowCredentials: [],
         });
@@ -159,8 +159,8 @@ export default {
                 if (Math.floor(Date.now() / 1000) - payload.iat > 300) return false;
                 return true;
             },
-            expectedOrigin: origin,
-            expectedRPID: domain,
+            expectedOrigin: 'https://mail.ionacs.com',
+            expectedRPID: 'mail.ionacs.com',
             authenticator: {
                 credentialID: passkeyData.id,
                 credentialPublicKey: isoBase64URL.toBuffer(passkeyData.publicKey),

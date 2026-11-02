@@ -91,6 +91,7 @@ export default {
         if (setting.enableMailAllowList && !setting.mailAllowList?.includes(mailDomain)) {
             return c.text(`${msgs.UserMailDomainMustInMsg} ${JSON.stringify(setting.mailAllowList, null, 2)}`, 400)
         }
+        if (!await c.env.DB.prepare('SELECT id FROM users WHERE user_email=?').bind(email).first()) return c.text('新用户请使用邮箱主页的邀请码注册', 403);
         // insert or update user
         const { success } = await c.env.DB.prepare(
             `INSERT INTO users (user_email, password, user_info)`

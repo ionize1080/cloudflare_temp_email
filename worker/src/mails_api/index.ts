@@ -121,7 +121,8 @@ api.post('/api/new_address', async (c) => {
         return c.text(msgs.NewAddressDisabledMsg, 403)
     }
     // eslint-disable-next-line prefer-const
-    let { name, domain, cf_token, password } = await c.req.json();
+    let { name, domain, cf_token, password, invitation_code } = await c.req.json();
+    if (typeof invitation_code !== 'string' || !/^[a-fA-F0-9]{32}$/.test(invitation_code.trim())) return c.text('请输入有效的邀请码', 400);
     if (getBooleanValue(c.env.ENABLE_ADDRESS_PASSWORD)) {
         try { validatePassword(password); } catch (error) { return c.text((error as Error).message, 400); }
     }
@@ -162,7 +163,7 @@ api.post('/api/new_address', async (c) => {
             enablePrefix: true,
             checkLengthByConfig: true,
             addressPrefix,
-            sourceMeta, password
+            sourceMeta, password, invitationCode: invitation_code
         });
         return c.json(res);
     } catch (e) {

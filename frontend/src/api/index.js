@@ -28,6 +28,9 @@ const apiFetch = async (path, options = {}) => {
         const response = await instance.request(path, {
             method: options.method || 'GET',
             data: options.body || null,
+            timeout: options.timeout || 30000,
+            responseType: options.responseType,
+            onUploadProgress: options.onUploadProgress,
             headers: {
                 'x-lang': i18n.global.locale.value,
                 'x-user-token': options.userJwt || userJwt.value,
@@ -37,6 +40,7 @@ const apiFetch = async (path, options = {}) => {
                 'x-fingerprint': fingerprint,
                 'Authorization': `Bearer ${jwt.value}`,
                 'Content-Type': 'application/json',
+                ...options.headers,
             },
         });
         if (response.status === 401 && path.startsWith("/admin")) {
@@ -46,7 +50,7 @@ const apiFetch = async (path, options = {}) => {
             showAuth.value = true;
         }
         if (response.status >= 300) {
-            throw new Error(`[${response.status}]: ${responseMessage(response.data)}`);
+            const error = new Error(`[${response.status}]: ${responseMessage(response.data)}`); error.resetSendId = response.data?.reset_send_id; throw error;
         }
         const data = response.data;
         return data;

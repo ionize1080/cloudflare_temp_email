@@ -24,7 +24,7 @@ export default {
             console.error("Failed to get oauth2 settings", e);
         }
         return c.json({
-            enable: settings.enable,
+            enable: false,
             enableMailVerify: settings.enableMailVerify,
             oauth2ClientIDs: oauth2ClientIDs,
         })

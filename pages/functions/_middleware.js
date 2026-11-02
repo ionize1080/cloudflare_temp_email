@@ -17,7 +17,7 @@ export async function onRequest(context) {
     if (url.hostname !== 'mail.ionacs.com') {
         return securityHeaders(Response.redirect(`${MAIL_ORIGIN}${url.pathname}${url.search}`, 308));
     }
-    if (!await requireAccess(context.request, reqPath.startsWith('/imap_api/') ? IMAP_ACCESS_AUDIENCE : undefined)) {
+    if (reqPath.startsWith('/imap_api/') && !await requireAccess(context.request, IMAP_ACCESS_AUDIENCE)) {
         return securityHeaders(new Response('请通过 Cloudflare Access 登录后重试。', { status: 401 }));
     }
     if (rejectCrossOrigin(context.request)) return securityHeaders(new Response('Forbidden origin', { status: 403 }));

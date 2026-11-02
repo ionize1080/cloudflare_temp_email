@@ -56,7 +56,7 @@ export function rejectCrossOrigin(request) {
 }
 
 export async function equalSecret(actual, expected) {
-  if (typeof actual !== 'string' || typeof expected !== 'string') return false;
+  if (typeof actual !== 'string' || typeof expected !== 'string' || actual.length > 4096) return false;
   const encode = new TextEncoder();
   const hash = await crypto.subtle.digest('SHA-256', encode.encode(expected));
   const key = await crypto.subtle.importKey('raw', hash, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);

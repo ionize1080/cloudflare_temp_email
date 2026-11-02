@@ -1,3 +1,4 @@
+import { cleanupAttachments } from './web_mail';
 import { Context } from 'hono';
 import { cleanup } from './common'
 import { CONSTANTS } from './constants'
@@ -6,6 +7,7 @@ import { CleanupSettings } from './models';
 import { executeCustomSqlCleanup } from './admin_api/cleanup_api';
 
 export async function scheduled(event: ScheduledEvent, env: Bindings, ctx: any) {
+    await cleanupAttachments(env);
     console.log("Scheduled event: ", event);
     const autoCleanupSetting = await getJsonSetting<CleanupSettings>(
         { env: env, } as Context<HonoCustomType>,

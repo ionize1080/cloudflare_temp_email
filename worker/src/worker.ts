@@ -3,6 +3,8 @@ import { cors } from 'hono/cors';
 import { jwt } from 'hono/jwt'
 import { Jwt } from 'hono/utils/jwt'
 
+import { invitationApi } from './invitations';
+import { webMailApi } from './web_mail';
 import { mailboxImapApi, adminImapApi, bridgeImapApi } from './imap_api';
 import { api as commonApi } from './commom_api';
 import { api as mailsApi } from './mails_api'
@@ -33,15 +35,17 @@ const app = new Hono<HonoCustomType>()
 //cors
 app.use('/*', async (c, next) => {
     try {
-        const identity = await requireAccess(c.req.raw, c.req.path.startsWith('/imap_api/') ? IMAP_ACCESS_AUDIENCE : undefined);
-        if (!identity) { c.res = c.text('Cloudflare Access authentication required', 401); return; }
-        c.set('accessEmail', typeof identity.email === 'string' ? identity.email.slice(0, 254) : 'Access service');
+        if (c.req.path.startsWith('/imap_api/')) {
+            const identity = await requireAccess(c.req.raw, IMAP_ACCESS_AUDIENCE);
+            if (!identity) { c.res=c.text('Service authentication required',401); return; }
+        }
+        c.set('accessEmail', 'admin credential');
         if (rejectCrossOrigin(c.req.raw)) { c.res = c.text('Forbidden origin', 403); return; }
         await next();
     } finally { c.res = securityHeaders(c.res, { html: c.res.headers.get('content-type')?.includes('text/html') }); }
 });
 app.use('/*', cors({ origin: origin => isAllowedOrigin(origin) ? origin : '', allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'] }));
-app.use('/*', bodyLimit({ maxSize: 2 * 1024 * 1024, onError: c => c.text('Request too large', 413) }));
+
 // error handler
 app.onError((err, c) => {
 	console.error(JSON.stringify({ event: 'request_failed', name: err.name, path: c.req.path }))
@@ -73,6 +77,12 @@ app.use('/*', async (c, next) => {
 		}
 	}
 
+    const ip = c.req.header('cf-connecting-ip') || 'unknown';
+    if (!c.req.path.startsWith('/imap_api/') && c.env.RATE_LIMITER && !(await c.env.RATE_LIMITER.limit({ key: 'public:' + ip })).success) return c.text('请求过于频繁，请稍后再试', 429);
+    if (['/api/new_address', '/api/address_login', '/user_api/login'].includes(c.req.path) || c.req.path.includes('/passkey/authenticate')) {
+        if (c.env.AUTH_RATE_LIMITER && !(await c.env.AUTH_RATE_LIMITER.limit({ key: 'auth:' + ip })).success) return c.text('尝试过多，请一分钟后再试', 429);
+    }
+    if (['/user_api/register', '/user_api/verify_code', '/external/api/send_mail', '/user_api/transfer_address'].includes(c.req.path) || c.req.path.startsWith('/telegram/')) return c.text('请使用邮箱主页的邀请注册和登录入口', 403);
 	// rate limit for specific endpoints
 	if (
 		c.req.path.startsWith("/api/new_address")
@@ -183,9 +193,15 @@ app.use('/api/*', async (c, next) => {
 	}
 
 	try {
-		return await jwt({ secret: c.env.JWT_SECRET, alg: "HS256" })(c, next);
+		return await jwt({ secret: c.env.JWT_SECRET, alg: "HS256" })(c, async () => {
+            const payload = c.get('jwtPayload');
+            if (typeof payload.address !== 'string' || !Number.isSafeInteger(payload.address_id)) { c.res=c.text('无效邮箱凭据',401); return; }
+            const row = await c.env.DB.prepare('SELECT id FROM address WHERE id=? AND name=?').bind(payload.address_id, payload.address).first();
+            if (!row) { c.res=c.text('邮箱凭据已失效',401); return; }
+            await next();
+        });
 	} catch (e) {
-		console.warn(e);
+		console.warn(JSON.stringify({event:"mailbox_auth_rejected"}));
 		const lang = c.get("lang") || c.env.DEFAULT_LANG;
 		const msgs = i18n.getMessages(lang);
 		return c.text(msgs.InvalidAddressCredentialMsg, 401)
@@ -258,7 +274,7 @@ app.use('/admin/*', async (c, next) => {
 			if (payload.exp < Math.floor(Date.now() / 1000)) {
 				return c.text(msgs.UserAcceesTokenExpiredMsg, 401)
 			}
-			if (payload.user_role !== c.env.ADMIN_USER_ROLE) {
+			if (payload.user_role !== c.env.ADMIN_USER_ROLE || !await c.env.DB.prepare('SELECT u.id FROM users u JOIN user_roles r ON r.user_id=u.id WHERE u.id=? AND r.role_text=?').bind(payload.user_id, c.env.ADMIN_USER_ROLE).first()) {
 				return c.text(msgs.UserRoleIsNotAdminMsg, 401)
 			}
 			await next();
@@ -268,12 +284,8 @@ app.use('/admin/*', async (c, next) => {
 		}
 	}
 
-	// disable admin api check
-	if (getBooleanValue(c.env.DISABLE_ADMIN_PASSWORD_CHECK)) {
-		await next();
-		return;
-	}
 
+    if (c.env.AUTH_RATE_LIMITER && !(await c.env.AUTH_RATE_LIMITER.limit({key:'admin-failed:'+(c.req.header('cf-connecting-ip')||'unknown')})).success) return c.text('管理登录尝试过多，请稍后再试',429);
 	return c.text(msgs.NeedAdminPasswordMsg, 401)
 });
 
@@ -289,6 +301,12 @@ app.use('/admin/*', async (c, next) => {
     ]).catch(() => console.error(JSON.stringify({ event: 'admin_audit_write_failed' }))));
 });
 
+app.use('/*', async (c, next) => {
+    if (c.req.path === '/api/compose/attachments' && c.req.method === 'POST') return next();
+    return bodyLimit({ maxSize: 2 * 1024 * 1024, onError: c => c.text('Request too large', 413) })(c, next);
+});
+app.route('/', invitationApi);
+app.route('/', webMailApi);
 app.route('/', mailboxImapApi);
 app.route('/', adminImapApi);
 app.route('/', bridgeImapApi);
