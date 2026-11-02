@@ -3,14 +3,14 @@ import {spawn} from 'node:child_process';
 import {refreshWallpapers} from '../src/wallpapers.mjs';
 const config=JSON.parse(await readFile(new URL('../wrangler.json',import.meta.url),'utf8'));
 const account=config.account_id; // The mailbox deployment config is authoritative.
-const token=process.env.CLOUDFLARE_API_TOKEN?.trim();
+const token=(process.env.NAV_DEPLOY_TOKEN||process.env.CLOUDFLARE_API_TOKEN)?.trim();
 if(!token)throw new Error('Missing CLOUDFLARE_API_TOKEN. Configure the Cloudflare Workers Builds deployment token.');
 const base=`https://api.cloudflare.com/client/v4/accounts/${account}`;
 async function cf(path,options={}){
  const res=await fetch(base+path,{...options,headers:{Authorization:`Bearer ${token}`,...options.headers},signal:AbortSignal.timeout(30000)});
  const data=await res.json();if(!res.ok||!data.success)throw new Error(`Cloudflare ${path.split('?')[0]}: ${(data.errors||[]).map(e=>e.message).join('; ')||res.status}`);return data.result;
 }
-function run(args,input){return new Promise((resolve,reject)=>{const child=spawn(process.execPath,['node_modules/wrangler/bin/wrangler.js',...args],{stdio:[input?'pipe':'ignore','inherit','inherit'],env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false',CLOUDFLARE_ACCOUNT_ID:account}});if(input)child.stdin.end(input);child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error(`Deployment command failed (${code})`)));});}
+function run(args,input){return new Promise((resolve,reject)=>{const child=spawn(process.execPath,['node_modules/wrangler/bin/wrangler.js',...args],{stdio:[input?'pipe':'ignore','inherit','inherit'],env:{...process.env,CI:'true',WRANGLER_SEND_METRICS:'false',CLOUDFLARE_ACCOUNT_ID:account,CLOUDFLARE_API_TOKEN:token}});if(input)child.stdin.end(input);child.on('error',reject);child.on('exit',code=>code===0?resolve():reject(new Error(`Deployment command failed (${code})`)));});}
 const database=config.d1_databases[0].database_id;
 async function sql(statement,params=[]){const result=await cf(`/d1/database/${database}/query`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sql:statement,params})});if(result.some(r=>!r.success))throw new Error('D1 query failed');return result;}
 // Preflight before altering routing or publishing: verify the existing administrator identity.

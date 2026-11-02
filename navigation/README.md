@@ -26,7 +26,7 @@ Node 22; `npm ci`, `npm run check`, `npm test`, `npm run build`. Tests use an is
 
 ## Automatic publication
 
-Cloudflare Workers Builds watches `main` in this repository, rooted at `navigation`. It runs syntax checks, tests, a dry build and dependency auditing before `npm run deploy`. The GitHub `IONACS Navigation checks` workflow also verifies pushes and pull requests. Publishing uses a dedicated Cloudflare build token stored in Cloudflare, independent of the repository's old deployment secrets.
+Cloudflare Workers Builds watches `main` in this repository, rooted at `navigation`. It runs syntax checks, tests, a dry build and dependency auditing before `npm run deploy`. The GitHub `IONACS Navigation checks` workflow also verifies pushes and pull requests. Build initialization uses the existing Cloudflare build identity. Publishing uses a dedicated account token stored as the encrypted `NAV_DEPLOY_TOKEN` build secret, independent of the repository's old deployment secrets.
 
 Deployment applies only additive navigation migrations via the separate `nav_migrations` table, warms wallpaper cache, prepares a managed Turnstile widget, uploads its secret, and attaches the root domain using Cloudflare Worker Custom Domains. Existing mailbox routing and email records are not edited.
 
