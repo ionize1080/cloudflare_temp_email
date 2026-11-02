@@ -79,6 +79,7 @@ type Bindings = {
     S3_URL_EXPIRES: number | undefined
 
     // cf turnstile
+    TURNSTILE_REQUIRED?: string
     CF_TURNSTILE_SITE_KEY: string | undefined
     CF_TURNSTILE_SECRET_KEY: string | undefined
 

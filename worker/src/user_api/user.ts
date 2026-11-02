@@ -1,5 +1,6 @@
+import { userToken } from '../sessions';
+import { verifyPassword, hashPasswordDigest } from '../../../shared/passwords.mjs';
 import { Context } from 'hono';
-import { Jwt } from 'hono/utils/jwt'
 
 import i18n from '../i18n';
 import { checkCfTurnstile, getJsonSetting, checkUserPassword, getUserRoles, getStringValue } from "../utils"
@@ -100,7 +101,7 @@ export default {
                     `INSERT INTO users (user_email, password, user_info)`
                     + ` VALUES (?, ?, ?)`
                 ).bind(
-                    email, password, JSON.stringify(userInfo)
+                    email, await hashPasswordDigest(password), JSON.stringify(userInfo)
                 ).run();
                 if (!success) {
                     return c.text(msgs.FailedToRegisterMsg, 500)
@@ -120,8 +121,8 @@ export default {
             + ` VALUES (?, ?, ?)`
             + ` ON CONFLICT(user_email) DO UPDATE SET password = ?, user_info = ?, updated_at = datetime('now')`
         ).bind(
-            email, password, JSON.stringify(userInfo),
-            password, JSON.stringify(userInfo)
+            email, await hashPasswordDigest(password), JSON.stringify(userInfo),
+            await hashPasswordDigest(password), JSON.stringify(userInfo)
         ).run();
         if (!success) {
             return c.text(msgs.FailedToRegisterMsg, 400);
@@ -151,27 +152,19 @@ export default {
         return c.json({ success: true })
     },
     login: async (c: Context<HonoCustomType>) => {
-        const { email, password } = await c.req.json();
+        const { email, password, cf_token } = await c.req.json();
         const msgs = i18n.getMessagesbyContext(c);
-        if (!email || !password) return c.text(msgs.InvalidEmailOrPasswordMsg, 400);
+        try { await checkCfTurnstile(c,cf_token,'user_login'); } catch { return c.text('请完成人机验证后重试',403); }
+        if (typeof email!=='string'||email.length>254||typeof password!=='string'||!/^[a-f0-9]{64}$/.test(password)) return c.text(msgs.InvalidEmailOrPasswordMsg,401);
+        if(c.env.AUTH_RATE_LIMITER && !(await c.env.AUTH_RATE_LIMITER.limit({key:'user-login:'+email.toLowerCase()})).success) return c.text('尝试过多，请稍后再试',429);
         const { id: user_id, password: dbPassword } = await c.env.DB.prepare(
             `SELECT id, password FROM users where user_email = ?`
         ).bind(email).first() || {};
-        if (!dbPassword) {
-            return c.text(msgs.UserNotFoundMsg, 400)
+        if (!await verifyPassword(password,dbPassword,'sha256')) return c.text(msgs.InvalidEmailOrPasswordMsg,401);
+        if (typeof dbPassword==='string' && !dbPassword.startsWith('pbkdf2-')) {
+            await c.env.DB.prepare('UPDATE users SET password=? WHERE id=? AND password=?').bind(await hashPasswordDigest(password),user_id,dbPassword).run();
         }
-        // TODO: need check password use random salt
-        if (dbPassword != password) {
-            return c.text(msgs.InvalidEmailOrPasswordMsg, 400)
-        }
-        // create jwt
-        const jwt = await Jwt.sign({
-            user_email: email,
-            user_id: user_id,
-            // 90 days expire in seconds
-            exp: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
-            iat: Math.floor(Date.now() / 1000),
-        }, c.env.JWT_SECRET, "HS256")
+        const jwt=await userToken(c.env,Number(user_id),email);
         return c.json({
             jwt: jwt
         })

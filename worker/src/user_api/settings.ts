@@ -1,3 +1,5 @@
+import { userToken } from '../sessions';
+import { sessionClaims } from '../../../shared/sessions.mjs';
 import { Context } from "hono";
 
 import i18n from "../i18n";
@@ -46,8 +48,7 @@ export default {
             c.env.ADMIN_USER_ROLE === user_role?.role
         );
         const access_token = user_role?.role ? await Jwt.sign({
-            user_email: user.user_email,
-            user_id: user.user_id,
+            ...await sessionClaims(c.env.DB,'user',user.user_id,user.user_email,'user-role',3600),
             user_role: user_role.role,
             iat: Math.floor(Date.now() / 1000),
             // 1 hour
@@ -56,13 +57,7 @@ export default {
         // create new if expired in 7 days
         const new_user_token = user.exp > (
             Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60
-        ) ? null : await Jwt.sign({
-            user_email: user.user_email,
-            user_id: user.user_id,
-            // 30 days expire in seconds
-            exp: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
-            iat: Math.floor(Date.now() / 1000),
-        }, c.env.JWT_SECRET, "HS256");
+        ) ? null : await userToken(c.env,user.user_id,user.user_email);
         // update address updated_at
         try {
             await c.env.DB.prepare(

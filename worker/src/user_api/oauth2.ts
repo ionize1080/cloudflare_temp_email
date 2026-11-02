@@ -1,8 +1,10 @@
 import { Context } from 'hono';
-import { Jwt } from 'hono/utils/jwt'
+import { userToken } from '../sessions';
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
+import { storeChallenge, consumeChallenge } from '../../../shared/sessions.mjs';
 
 import i18n from '../i18n';
-import { getJsonSetting, getStringValue, getUserRoles } from '../utils';
+import { checkCfTurnstile, getJsonSetting, getStringValue, getUserRoles } from '../utils';
 import { UserOauth2Settings } from '../models';
 import { CONSTANTS } from '../constants';
 
@@ -10,17 +12,23 @@ import { CONSTANTS } from '../constants';
 export default {
     getOauth2LoginUrl: async (c: Context<HonoCustomType>) => {
         const settings = await getJsonSetting<UserOauth2Settings[]>(c, CONSTANTS.OAUTH2_SETTINGS_KEY);
-        const { clientID, state } = c.req.query();
+        const { clientID,cf_token } = await c.req.json();
+        try { await checkCfTurnstile(c,cf_token,'user_login'); } catch { return c.text('请完成人机验证后重试',403); }
         const msgs = i18n.getMessagesbyContext(c);
         const setting = settings?.find(s => s.clientID === clientID);
         if (!setting) {
             return c.text(msgs.Oauth2ClientIDNotFoundMsg, 400);
         }
-        const url = `${setting.authorizationURL}?client_id=${setting.clientID}&response_type=code&redirect_uri=${setting.redirectURL}&scope=${setting.scope}&state=${state}`
-        return c.json({ url });
+        const state=crypto.randomUUID();
+        await storeChallenge(c.env.DB,state,'oauth',clientID);
+        setCookie(c,'__Host-ionacs-oauth',state,{httpOnly:true,secure:true,sameSite:'Lax',path:'/',maxAge:300});
+        const url=new URL(setting.authorizationURL);
+        if(url.protocol!=='https:')return c.text('登录服务配置无效',400);
+        for(const [key,value] of Object.entries({client_id:setting.clientID,response_type:'code',redirect_uri:setting.redirectURL,scope:setting.scope,state}))url.searchParams.set(key,value);
+        return c.json({url:url.toString(),state});
     },
     oauth2Login: async (c: Context<HonoCustomType>) => {
-        const { clientID, code } = await c.req.json<{ clientID?: string, code?: string }>();
+        const { clientID, code, state } = await c.req.json<{ clientID?: string, code?: string, state?: string }>();
         const msgs = i18n.getMessagesbyContext(c);
         if (!clientID || !code) {
             return c.text(msgs.Oauth2CliendIDOrCodeMissingMsg, 400);
@@ -30,6 +38,9 @@ export default {
         if (!setting) {
             return c.text(msgs.Oauth2ClientIDNotFoundMsg, 400);
         }
+        if(typeof state!=='string'||state!==getCookie(c,'__Host-ionacs-oauth')||!await consumeChallenge(c.env.DB,state,'oauth',clientID))return c.text('登录验证已失效，请重新开始',400);
+        deleteCookie(c,'__Host-ionacs-oauth',{path:'/',secure:true});
+        if(![setting.accessTokenURL,setting.userInfoURL].every(value=>new URL(value).protocol==='https:'))return c.text('登录服务配置无效',400);
         const params = {
             code,
             client_id: setting.clientID,
@@ -38,7 +49,7 @@ export default {
             redirect_uri: setting.redirectURL,
         }
         const res = await fetch(setting.accessTokenURL, {
-            method: 'POST',
+            method: 'POST', redirect:'manual', signal:AbortSignal.timeout(15000),
             body: setting.accessTokenFormat === 'json'
                 ? JSON.stringify(params) :
                 new URLSearchParams(params).toString(),
@@ -50,12 +61,13 @@ export default {
             }
         })
         if (!res.ok) {
-            console.error(`Failed to get access token: ${res.status} ${res.statusText} ${await res.text()}`)
+            console.warn(JSON.stringify({event:"oauth_token_failed",status:res.status}))
             return c.text(msgs.Oauth2FailedGetAccessTokenMsg, 400);
         }
         const resJson = await res.json();
         const { access_token, token_type } = resJson as { access_token: string, token_type?: string };
         const userRes = await fetch(setting.userInfoURL, {
+            redirect:"manual",signal:AbortSignal.timeout(15000),
             headers: {
                 "Authorization": `${token_type || 'Bearer'} ${access_token}`,
                 "Accept": "application/json",
@@ -63,7 +75,7 @@ export default {
             }
         })
         if (!userRes.ok) {
-            console.error(`Failed to get user info: ${userRes.status} ${userRes.statusText} ${await userRes.text()}`)
+            console.warn(JSON.stringify({event:"oauth_profile_failed",status:userRes.status}))
             return c.text(msgs.Oauth2FailedGetUserInfoMsg, 400);
         }
         const userInfo = await userRes.json<any>()
@@ -83,7 +95,7 @@ export default {
             return email;
         })()
 
-        if (!email) {
+        if (typeof email!=='string'||email.length>254||userInfo.email_verified!==true) {
             return c.text(msgs.Oauth2FailedGetUserEmailMsg, 400);
         }
         // check email in mail allow list
@@ -127,13 +139,7 @@ export default {
             }
         }
         // create jwt
-        const jwt = await Jwt.sign({
-            user_email: email,
-            user_id: user_id,
-            // 90 days expire in seconds
-            exp: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
-            iat: Math.floor(Date.now() / 1000),
-        }, c.env.JWT_SECRET, "HS256")
+        const jwt = await userToken(c.env,Number(user_id),email);
         return c.json({
             jwt: jwt
         })

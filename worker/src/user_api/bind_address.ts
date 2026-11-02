@@ -1,5 +1,5 @@
+import { mailboxToken } from '../sessions';
 import { Context } from 'hono';
-import { Jwt } from 'hono/utils/jwt'
 
 import { UserSettings, RoleAddressConfig } from "../models";
 import { getJsonSetting } from "../utils"
@@ -150,7 +150,7 @@ const UserBindAddressModule = {
         }
         // select binded address
         const { results } = await c.env.DB.prepare(
-            `SELECT a.*,`
+            `SELECT a.id,a.name,a.created_at,a.updated_at,`
             + ` (SELECT COUNT(*) FROM raw_mails WHERE address = a.name) AS mail_count,`
             + ` (SELECT COUNT(*) FROM sendbox WHERE address = a.name) AS send_count`
             + ` FROM address a `
@@ -187,10 +187,8 @@ const UserBindAddressModule = {
         const name = await c.env.DB.prepare(
             `SELECT name FROM address WHERE id = ? `
         ).bind(address_id).first("name");
-        const jwt = await Jwt.sign({
-            address: name,
-            address_id: address_id
-        }, c.env.JWT_SECRET, "HS256")
+        if (typeof name !== 'string') return c.text('邮箱不存在',404);
+        const jwt = await mailboxToken(c.env, address_id, name);
         return c.json({
             jwt: jwt
         })

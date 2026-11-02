@@ -1,5 +1,7 @@
+import { checkCfTurnstile } from '../utils';
 import { Context } from 'hono';
-import { Jwt } from 'hono/utils/jwt'
+import { userToken } from '../sessions';
+import { storeChallenge, validChallenge, consumeChallenge } from '../../../shared/sessions.mjs';
 import {
     generateRegistrationOptions,
     verifyRegistrationResponse,
@@ -8,7 +10,6 @@ import {
 } from '@simplewebauthn/server';
 
 import { Passkey } from '../models';
-import { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/types';
 import { isoBase64URL } from '@simplewebauthn/server/helpers';
 import i18n from '../i18n';
 
@@ -42,7 +43,6 @@ export default {
     },
     registerRequest: async (c: Context<HonoCustomType>) => {
         const user = c.get("userPayload");
-        const { domain } = await c.req.json();
         const { results } = await c.env.DB.prepare(
             `SELECT passkey FROM user_passkeys WHERE user_id = ?`
         ).bind(user.user_id).all<Record<string, string>>();
@@ -52,12 +52,6 @@ export default {
                 id: passkey.id,
                 transports: passkey.transports,
             }));
-        // create challenge with 1 hour expiration
-        const challenge = await Jwt.sign({
-            user_email: user.user_email,
-            user_id: user.user_id,
-            iat: Math.floor(Date.now() / 1000),
-        }, c.env.JWT_SECRET, "HS256")
         // Use SimpleWebAuthn's handy function to create registration options.
         const options = await generateRegistrationOptions({
             rpName: c.env.TITLE || "Temp Mail",
@@ -67,29 +61,29 @@ export default {
             userDisplayName: user.user_email,
             attestationType: 'none',
             excludeCredentials: excludeCredentials,
-            challenge: challenge,
         });
 
+        await storeChallenge(c.env.DB,options.challenge,'passkey-register',user.user_id);
         return c.json(options);
     },
     registerResponse: async (c: Context<HonoCustomType>) => {
         const msgs = i18n.getMessagesbyContext(c);
         const user = c.get("userPayload");
-        const { credential, origin, passkey_name } = await c.req.json();
+        const { credential, passkey_name } = await c.req.json();
+        if(typeof passkey_name!=='string'||!passkey_name.trim()||passkey_name.length>255)return c.text('无效的通行密钥名称',400);
+        let usedChallenge='';
         // Verify the registration response
         const verification = await verifyRegistrationResponse({
             response: credential,
             expectedChallenge: async (challenge: string) => {
-                const payload = await Jwt.verify(atob(challenge), c.env.JWT_SECRET, "HS256");
-                if (!payload || !payload.iat) return false;
-                // check iad is not older than 5 minutes
-                if (Math.floor(Date.now() / 1000) - payload.iat > 300) return false;
-                if (payload.user_id !== user.user_id) return false;
-                return true;
+                usedChallenge=challenge;
+                return validChallenge(c.env.DB,challenge,'passkey-register',user.user_id);
             },
+            expectedRPID:'mail.ionacs.com',
             expectedOrigin: 'https://mail.ionacs.com',
             requireUserVerification: true,
-        });
+        }).catch(() => null);
+        if (!verification) return c.text('通行密钥验证失败，请重新开始',400);
         const { verified, registrationInfo } = verification;
 
         if (!verified || !registrationInfo) {
@@ -97,10 +91,11 @@ export default {
         }
 
         const {
-            credentialID, credentialPublicKey,
-            counter, credentialDeviceType, credentialBackedUp,
+            credential: verifiedCredential, credentialDeviceType, credentialBackedUp,
         } = registrationInfo;
 
+        if (!await consumeChallenge(c.env.DB,usedChallenge,'passkey-register',user.user_id))return c.text('验证已失效，请重新开始',400);
+        const {id:credentialID,publicKey:credentialPublicKey,counter}=verifiedCredential;
         // Base64URL encode ArrayBuffers.
         const base64PublicKey = isoBase64URL.fromBuffer(credentialPublicKey);
 
@@ -121,21 +116,18 @@ export default {
         return c.json({ success });
     },
     authenticateRequest: async (c: Context<HonoCustomType>) => {
-        const { domain } = await c.req.json();
-        const challenge = await Jwt.sign({
-            domain,
-            iat: Math.floor(Date.now() / 1000),
-        }, c.env.JWT_SECRET, "HS256")
-        const options: PublicKeyCredentialRequestOptionsJSON = await generateAuthenticationOptions({
-            rpID: 'mail.ionacs.com',
-            challenge: challenge,
-            allowCredentials: [],
+        const {cf_token}=await c.req.json();
+        try { await checkCfTurnstile(c,cf_token,'user_login'); } catch { return c.text('请完成人机验证后重试',403); }
+        const options = await generateAuthenticationOptions({
+            rpID:'mail.ionacs.com', allowCredentials:[], userVerification:'required',
         });
+        await storeChallenge(c.env.DB,options.challenge,'passkey-auth','');
         return c.json(options);
     },
     authenticateResponse: async (c: Context<HonoCustomType>) => {
         const msgs = i18n.getMessagesbyContext(c);
-        const { domain, credential, origin } = await c.req.json();
+        const { credential } = await c.req.json();
+        let usedChallenge='';
         const passkey_id = credential?.id;
         if (!passkey_id) {
             return c.text(msgs.InvalidInputMsg, 400);
@@ -153,26 +145,26 @@ export default {
         const verification = await verifyAuthenticationResponse({
             response: credential,
             expectedChallenge: async (challenge: string) => {
-                const payload = await Jwt.verify(atob(challenge), c.env.JWT_SECRET, "HS256");
-                if (!payload || !payload.iat) return false;
-                // check iad is not older than 5 minutes
-                if (Math.floor(Date.now() / 1000) - payload.iat > 300) return false;
-                return true;
+                usedChallenge=challenge;
+                return validChallenge(c.env.DB,challenge,'passkey-auth','');
             },
+            requireUserVerification:true,
             expectedOrigin: 'https://mail.ionacs.com',
             expectedRPID: 'mail.ionacs.com',
-            authenticator: {
-                credentialID: passkeyData.id,
-                credentialPublicKey: isoBase64URL.toBuffer(passkeyData.publicKey),
-                counter: counter || passkeyData.counter,
+            credential: {
+                id: passkeyData.id,
+                publicKey: isoBase64URL.toBuffer(passkeyData.publicKey),
+                counter: counter ?? passkeyData.counter,
                 transports: passkeyData.transports,
             },
-        });
+        }).catch(() => null);
+        if (!verification) return c.text('通行密钥验证失败，请重新开始',400);
         const { verified, authenticationInfo } = verification;
         if (!verified) {
             return c.text(msgs.AuthenticationFailedMsg, 400);
         }
 
+        if (!await consumeChallenge(c.env.DB,usedChallenge,'passkey-auth','')) return c.text('验证已失效，请重新开始',400);
         if (authenticationInfo) {
             const { newCounter } = authenticationInfo;
             // Update the counter in the database
@@ -193,13 +185,7 @@ export default {
             return c.text(msgs.UserNotFoundMsg, 404);
         }
         // create jwt
-        const jwt = await Jwt.sign({
-            user_email: user_email,
-            user_id: user_id,
-            // 90 days expire in seconds
-            exp: Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
-            iat: Math.floor(Date.now() / 1000),
-        }, c.env.JWT_SECRET, "HS256")
+        const jwt = await userToken(c.env,Number(user_id),user_email);
         return c.json({
             jwt: jwt
         })

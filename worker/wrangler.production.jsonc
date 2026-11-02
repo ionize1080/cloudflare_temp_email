@@ -25,7 +25,9 @@
     "IMAP_PORT": 993,
     "SMTP_PORT": 465,
     "SMTP_ALT_PORT": 2465,
-    "ATTACHMENT_ORIGIN": "https://status.ionacs.com"
+    "ATTACHMENT_ORIGIN": "https://status.ionacs.com",
+    "CF_TURNSTILE_SITE_KEY": "0x4AAAAAAFwbCy_NPbTRtJ9Z",
+    "TURNSTILE_REQUIRED": "true"
   },
   "d1_databases": [
     {

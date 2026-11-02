@@ -226,6 +226,25 @@ class Account(imap4.MemoryAccount):
             self.addMailbox(name, Mailbox(gateway, name, identity['uidvalidity']))
             self.subscribe(name)
 
+    def listMailboxes(self, ref, wildcard):
+        # Only two fixed folders exist. Match IMAP wildcards without compiling
+        # client-supplied regular expressions (CVE-2026-106454).
+        ref = ref.upper() if isinstance(ref, str) else ref.decode('ascii').upper()
+        pattern = wildcard.upper() if isinstance(wildcard, str) else wildcard.decode('ascii').upper()
+        if len(ref) > 256 or len(pattern) > 256:
+            raise imap4.MailboxException('Mailbox pattern too long')
+        def matches(name):
+            reachable = {0}
+            for char in pattern:
+                if char in '*%':
+                    reachable = {end for start in reachable for end in range(start, len(name)+1)
+                                 if char == '*' or '/' not in name[start:end]}
+                else:
+                    reachable = {i+1 for i in reachable if i < len(name) and name[i] == char}
+            return len(name) in reachable
+        return [(name, box) for name, box in self.mailboxes.items()
+                if name.startswith(ref) and matches(name)]
+
     def select(self, name, readwrite=1):
         mailbox = super().select(name, readwrite)
         if mailbox is None: return None

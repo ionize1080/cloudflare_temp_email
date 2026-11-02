@@ -1,3 +1,4 @@
+import { SECURITY_SCHEMA } from '../security_schema';
 import { Context } from "hono";
 import { IMAP_SCHEMA } from "../imap_schema";
 import { SMTP_SCHEMA } from "../smtp_schema";
@@ -148,6 +149,7 @@ export default {
         await c.env.DB.batch(IMAP_SCHEMA.map(sql => c.env.DB.prepare(sql)));
         await c.env.DB.batch(SMTP_SCHEMA.map(sql => c.env.DB.prepare(sql)));
         await c.env.DB.batch(PUBLIC_MAIL_SCHEMA.map(sql => c.env.DB.prepare(sql)));
+        await c.env.DB.batch(SECURITY_SCHEMA.map(sql => c.env.DB.prepare(sql)));
 
         const version = await utils.getSetting(c, CONSTANTS.DB_VERSION_KEY);
         if (version) {
@@ -211,6 +213,7 @@ export default {
             await c.env.DB.batch(IMAP_SCHEMA.map(sql => c.env.DB.prepare(sql)));
             await c.env.DB.batch(SMTP_SCHEMA.map(sql => c.env.DB.prepare(sql)));
         await c.env.DB.batch(PUBLIC_MAIL_SCHEMA.map(sql => c.env.DB.prepare(sql)));
+        await c.env.DB.batch(SECURITY_SCHEMA.map(sql => c.env.DB.prepare(sql)));
             await utils.saveSetting(c, CONSTANTS.DB_VERSION_KEY, CONSTANTS.DB_VERSION);
             return c.json({
                 success: true,

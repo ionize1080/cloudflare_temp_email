@@ -18,6 +18,7 @@ const showDeleteAccount = ref(false)
 const showClearInbox = ref(false)
 const showClearSentItems = ref(false)
 const showChangePassword = ref(false)
+const currentPassword = ref('')
 const newPassword = ref('')
 const confirmPassword = ref('')
 const { locale, t } = useI18n({
@@ -112,13 +113,16 @@ const changePassword = async () => {
         return;
     }
     try {
-        await api.fetch(`/api/address_change_password`, {
+        const result = await api.fetch(`/api/address_change_password`, {
             method: 'POST',
             body: JSON.stringify({
-                new_password: newPassword.value
+                new_password: newPassword.value,
+                current_password: currentPassword.value
             })
         });
+        if (result.jwt) jwt.value=result.jwt;
         message.success(t("passwordChanged"));
+        currentPassword.value = '';
         newPassword.value = '';
         confirmPassword.value = '';
         showChangePassword.value = false;
@@ -188,6 +192,7 @@ const changePassword = async () => {
         
         <n-modal v-model:show="showChangePassword" preset="dialog" :title="t('changePassword')">
             <n-form :model="{ newPassword, confirmPassword }">
+                <n-form-item label="当前密码"><n-input v-model:value="currentPassword" type="password" autocomplete="current-password" /></n-form-item>
                 <n-form-item :label="t('newPassword')">
                     <n-input v-model:value="newPassword" type="password" placeholder="" show-password-on="click" />
                 </n-form-item>

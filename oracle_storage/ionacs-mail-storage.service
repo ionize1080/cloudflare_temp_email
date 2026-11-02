@@ -7,6 +7,7 @@ Group=mailstorage
 ExecStart=/usr/bin/python3 /opt/ionacs-mail-storage/server.py
 LoadCredential=token:/etc/ionacs-mail-storage/token
 StateDirectory=ionacs-mail-storage
+StateDirectoryMode=0700
 Restart=on-failure
 RestartSec=3
 MemoryMax=128M

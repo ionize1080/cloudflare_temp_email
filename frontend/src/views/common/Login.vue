@@ -48,6 +48,7 @@ const credential = ref('')
 const emailName = ref("")
 const emailDomain = ref("")
 const cfToken = ref("")
+const loginToken=ref(''), loginChallenge=ref(null), signupChallenge=ref(null)
 const loginMethod = ref('credential') // 'credential' or 'password'
 const loginAddress = ref('')
 const loginPassword = ref('')
@@ -63,6 +64,7 @@ const initLoginMethod = () => {
 }
 
 const login = async () => {
+    if(openSettings.value.cfTurnstileSiteKey&&!loginToken.value){message.error('请先完成人机验证');return;}
     if (loginMethod.value === 'password') {
         // Password login
         if (!loginAddress.value || !loginPassword.value) {
@@ -75,7 +77,8 @@ const login = async () => {
                 body: JSON.stringify({
                     email: loginAddress.value,
                     password: loginPassword.value,
-                    password_format: 'plain'
+                    password_format: 'plain',
+                    cf_token: loginToken.value
                 })
             });
             jwt.value = res.jwt;
@@ -88,6 +91,7 @@ const login = async () => {
             await router.push(getRouterPathWithLang("/", locale.value));
         } catch (error) {
             message.error(error.message || "error");
+            loginChallenge.value?.reset();
         }
         return;
     }
@@ -96,7 +100,8 @@ const login = async () => {
         return;
     }
     try {
-        jwt.value = credential.value;
+        const res=await api.fetch('/open_api/credential_login',{method:'POST',body:JSON.stringify({credential:credential.value,cf_token:loginToken.value})});
+        jwt.value=res.jwt;
         await api.getSettings();
         try {
             await props.bindUserAddress();
@@ -106,6 +111,7 @@ const login = async () => {
         await router.push(getRouterPathWithLang("/", locale.value));
     } catch (error) {
         message.error(error.message || "error");
+            loginChallenge.value?.reset();
     }
 }
 
@@ -217,6 +223,7 @@ const newEmail = async () => {
         }
     } catch (error) {
         message.error(error.message || "error");
+            signupChallenge.value?.reset();
     }
 };
 
@@ -297,6 +304,7 @@ onMounted(async () => {
                         </n-button>
                     </div>
 
+                    <Turnstile ref="loginChallenge" v-model:value="loginToken" action="mailbox_login" />
                     <n-button @click="login" :loading="loading" type="primary" block secondary strong>
                         <template #icon>
                             <n-icon :component="EmailOutlined" />
@@ -331,7 +339,7 @@ onMounted(async () => {
                             <n-form-item-row label="设置密码（12–128 位）" required style="margin-top:20px"><n-input v-model:value="registerPassword" type="password" :maxlength="128" show-password-on="click" :input-props="{ autocomplete: 'new-password' }" /></n-form-item-row>
                             <n-form-item-row label="确认密码" required><n-input v-model:value="confirmPassword" type="password" :maxlength="128" :input-props="{ autocomplete: 'new-password' }" @keydown.enter.prevent="newEmail" /></n-form-item-row>
                         </template>
-                        <Turnstile v-model:value="cfToken" />
+                        <Turnstile ref="signupChallenge" v-model:value="cfToken" action="signup" />
                         <n-button type="primary" block secondary strong @click="newEmail" :loading="loading">
                             <template #icon>
                                 <n-icon :component="NewLabelOutlined" />

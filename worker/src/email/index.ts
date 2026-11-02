@@ -19,6 +19,8 @@ async function email(message: ForwardableEmailMessage, env: Bindings, ctx: Execu
         console.log(`Reject message from ${message.from} to ${message.to}`);
         return;
     }
+    if(message.rawSize>25*1024*1024){message.setReject('Message exceeds 25 MiB');return;}
+    if(!await env.DB.prepare('SELECT id FROM address WHERE name=?').bind(message.to.toLowerCase()).first()){message.setReject('Unknown mailbox');return;}
     const rawEmail = await new Response(message.raw).text();
     const parsedEmailContext: ParsedEmailContext = {
         rawEmail: rawEmail
@@ -72,11 +74,14 @@ async function email(message: ForwardableEmailMessage, env: Bindings, ctx: Execu
         ).run();
         if (!success) {
             message.setReject(`Failed save message to ${message.to}`);
-            console.error(`Failed save message from ${message.from} to ${message.to}`);
+            console.error("Incoming message storage failed");
+            return;
         }
     }
     catch (error) {
-        console.error("save email error", error);
+        console.error("Incoming message storage failed");
+        message.setReject("Temporary storage failure; retry later");
+        return;
     }
 
     // forward email

@@ -23,7 +23,7 @@ api.post('/user_api/verify_code', user.verifyCode);
 api.post('/user_api/register', user.register);
 
 // oauth2 api
-api.get('/user_api/oauth2/login_url', oauth2.getOauth2LoginUrl);
+api.post('/user_api/oauth2/login_url', oauth2.getOauth2LoginUrl);
 api.post('/user_api/oauth2/callback', oauth2.oauth2Login);
 
 // bind address api

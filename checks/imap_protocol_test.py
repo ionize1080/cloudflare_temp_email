@@ -70,6 +70,15 @@ class ImapTests(unittest.TestCase):
         client = self.client()
         with self.assertRaises(imaplib.IMAP4.error): client.login('alice@example.com', 'wrong')
 
+    def test_hostile_list_patterns_are_literal_and_negative_search_does_not_stall(self):
+        client = self.client(); client.login('alice@example.com', 'a' * 48)
+        self.assertEqual(client.list('""', '".*"'), ('OK', [None]))
+        self.assertEqual(client.list('""', '"(a+)+z"'), ('OK', [None]))
+        self.assertIn(b'INBOX', b' '.join(client.list('""', '"IN%"')[1]))
+        client.select('INBOX')
+        with self.assertRaises(imaplib.IMAP4.error): client._simple_command('SEARCH', '{-100}zzzzzzzzzz')
+        self.assertEqual(client.noop()[0], 'OK')
+
     def test_tls_login_list_search_uid_fetch_attachment_and_flags(self):
         client = self.client(); self.assertEqual(client.login('alice@example.com', 'a' * 48)[0], 'OK')
         self.assertEqual(client.list()[0], 'OK'); self.assertEqual(client.select('INBOX'), ('OK', [b'2']))

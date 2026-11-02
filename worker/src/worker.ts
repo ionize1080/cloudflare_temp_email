@@ -1,3 +1,5 @@
+import { loginSecurity } from './login_security';
+import { validSession } from '../../shared/sessions.mjs';
 import { Context, Hono } from 'hono'
 import { cors } from 'hono/cors';
 import { jwt } from 'hono/jwt'
@@ -79,7 +81,7 @@ app.use('/*', async (c, next) => {
 
     const ip = c.req.header('cf-connecting-ip') || 'unknown';
     if (!c.req.path.startsWith('/imap_api/') && c.env.RATE_LIMITER && !(await c.env.RATE_LIMITER.limit({ key: 'public:' + ip })).success) return c.text('请求过于频繁，请稍后再试', 429);
-    if (['/api/new_address', '/api/address_login', '/user_api/login'].includes(c.req.path) || c.req.path.includes('/passkey/authenticate')) {
+    if (['/api/new_address', '/api/address_login', '/open_api/admin_login', '/open_api/credential_login', '/user_api/login', '/user_api/oauth2/callback', '/user_api/oauth2/login_url'].includes(c.req.path) || c.req.path.includes('/passkey/authenticate')) {
         if (c.env.AUTH_RATE_LIMITER && !(await c.env.AUTH_RATE_LIMITER.limit({ key: 'auth:' + ip })).success) return c.text('尝试过多，请一分钟后再试', 429);
     }
     if (['/user_api/register', '/user_api/verify_code', '/external/api/send_mail', '/user_api/transfer_address'].includes(c.req.path) || c.req.path.startsWith('/telegram/')) return c.text('请使用邮箱主页的邀请注册和登录入口', 403);
@@ -144,7 +146,7 @@ const checkUserPayload = async (
 		if (!token) return;
 		const payload = await Jwt.verify(token, c.env.JWT_SECRET, "HS256");
 		// check expired
-		if (!payload.exp) return;
+		if (!await validSession(c.env.DB,payload,'user')) return;
 		// exp is in seconds
 		if (payload.exp < Math.floor(Date.now() / 1000)) {
 			return;
@@ -168,7 +170,7 @@ const checkoutUserRolePayload = async (
 		if (payload.exp < Math.floor(Date.now() / 1000)) {
 			return;
 		}
-		if (typeof payload?.user_role !== "string") return;
+		if (typeof payload?.user_role !== 'string' || !await validSession(c.env.DB,payload,'user','user-role') || !await c.env.DB.prepare('SELECT 1 FROM user_roles WHERE user_id=? AND role_text=?').bind(payload.user_id,payload.user_role).first()) return;
 		c.set("userRolePayload", payload.user_role);
 	} catch (e) {
 		console.error(e);
@@ -195,9 +197,7 @@ app.use('/api/*', async (c, next) => {
 	try {
 		return await jwt({ secret: c.env.JWT_SECRET, alg: "HS256" })(c, async () => {
             const payload = c.get('jwtPayload');
-            if (typeof payload.address !== 'string' || !Number.isSafeInteger(payload.address_id)) { c.res=c.text('无效邮箱凭据',401); return; }
-            const row = await c.env.DB.prepare('SELECT id FROM address WHERE id=? AND name=?').bind(payload.address_id, payload.address).first();
-            if (!row) { c.res=c.text('邮箱凭据已失效',401); return; }
+            if (!await validSession(c.env.DB,payload,'mailbox')) { c.res=c.text('邮箱凭据已失效，请重新登录',401); return; }
             await next();
         });
 	} catch (e) {
@@ -229,7 +229,7 @@ app.use('/user_api/*', async (c, next) => {
 		if (!token) return c.text(msgs.UserTokenExpiredMsg, 401)
 		const payload = await Jwt.verify(token, c.env.JWT_SECRET, "HS256");
 		// check expired
-		if (!payload.exp) return c.text(msgs.UserTokenExpiredMsg, 401);
+		if (!await validSession(c.env.DB,payload,'user')) return c.text(msgs.UserTokenExpiredMsg, 401);
 		// exp is in seconds
 		if (payload.exp < Math.floor(Date.now() / 1000)) {
 			return c.text(msgs.UserTokenExpiredMsg, 401)
@@ -245,7 +245,7 @@ app.use('/user_api/*', async (c, next) => {
 	if (c.req.path.startsWith('/user_api/bind_address')
 		&& c.req.method === 'POST'
 	) {
-		return jwt({ secret: c.env.JWT_SECRET, alg: "HS256" })(c, next);
+		return jwt({ secret: c.env.JWT_SECRET, alg: 'HS256' })(c, async () => { if (!await validSession(c.env.DB,c.get('jwtPayload'),'mailbox')) { c.res=c.text('邮箱凭据已失效',401); return; } await next(); });
 	}
 	await next();
 });
@@ -256,10 +256,15 @@ app.use('/admin/*', async (c, next) => {
 	const adminPasswords = getAdminPasswords(c);
 	if (adminPasswords && adminPasswords.length > 0) {
 		const adminAuth = c.req.raw.headers.get("x-admin-auth");
-		if (adminAuth && (await Promise.all(adminPasswords.map(password => equalSecret(adminAuth, password)))).some(Boolean)) {
-			await next();
-			return;
-		}
+        if (adminAuth && adminAuth.length<4096) {
+            for(const password of adminPasswords) {
+                let valid=false;
+                // Password-only compatibility is restricted to deployments without Turnstile.
+                if(!c.env.CF_TURNSTILE_SITE_KEY && c.env.TURNSTILE_REQUIRED!=='true')valid=await equalSecret(adminAuth,password);
+                if(!valid)try { const payload=await Jwt.verify(adminAuth,c.env.JWT_SECRET+':admin:v1:'+password,'HS256'); valid=payload.purpose==='admin-session'&&Number.isFinite(payload.exp); } catch { /* invalid session */ }
+                if(valid){await next();return;}
+            }
+        }
 	}
 	const lang = c.req.raw.headers.get("x-lang") || c.env.DEFAULT_LANG;
 	const msgs = i18n.getMessages(lang);
@@ -269,7 +274,7 @@ app.use('/admin/*', async (c, next) => {
 		try {
 			const payload = await Jwt.verify(access_token, c.env.JWT_SECRET, "HS256");
 			// check expired
-			if (!payload.exp) return c.text(msgs.UserAcceesTokenExpiredMsg, 401);
+			if (!await validSession(c.env.DB,payload,'user','user-role')) return c.text(msgs.UserAcceesTokenExpiredMsg, 401);
 			// exp is in seconds
 			if (payload.exp < Math.floor(Date.now() / 1000)) {
 				return c.text(msgs.UserAcceesTokenExpiredMsg, 401)
@@ -305,6 +310,7 @@ app.use('/*', async (c, next) => {
     if (c.req.path === '/api/compose/attachments' && c.req.method === 'POST') return next();
     return bodyLimit({ maxSize: 2 * 1024 * 1024, onError: c => c.text('Request too large', 413) })(c, next);
 });
+app.route('/', loginSecurity);
 app.route('/', invitationApi);
 app.route('/', webMailApi);
 app.route('/', mailboxImapApi);

@@ -1,8 +1,9 @@
+import { hashPassword } from '../../../shared/passwords.mjs';
+import { mailboxToken } from '../sessions';
 import { Hono } from 'hono'
-import { Jwt } from 'hono/utils/jwt'
 
 import i18n from '../i18n'
-import { sendAdminInternalMail, getJsonSetting, saveSetting, getUserRoles, getBooleanValue, hashPassword } from '../utils'
+import { sendAdminInternalMail, getJsonSetting, saveSetting, getUserRoles, getBooleanValue } from '../utils'
 import { newAddress, handleListQuery } from '../common'
 import { CONSTANTS } from '../constants'
 import cleanup_api from './cleanup_api'
@@ -28,7 +29,7 @@ api.get('/admin/address', async (c) => {
     const { limit, offset, query } = c.req.query();
     if (query) {
         return await handleListQuery(c,
-            `SELECT a.*,`
+            `SELECT a.id,a.name,a.created_at,a.updated_at,a.source_meta,`
             + ` (SELECT COUNT(*) FROM raw_mails WHERE address = a.name) AS mail_count,`
             + ` (SELECT COUNT(*) FROM sendbox WHERE address = a.name) AS send_count`
             + ` FROM address a`
@@ -38,7 +39,7 @@ api.get('/admin/address', async (c) => {
         );
     }
     return await handleListQuery(c,
-        `SELECT a.*,`
+        `SELECT a.id,a.name,a.created_at,a.updated_at,a.source_meta,`
         + ` (SELECT COUNT(*) FROM raw_mails WHERE address = a.name) AS mail_count,`
         + ` (SELECT COUNT(*) FROM sendbox WHERE address = a.name) AS send_count`
         + ` FROM address a`,
@@ -111,10 +112,8 @@ api.get('/admin/show_password/:id', async (c) => {
     const name = await c.env.DB.prepare(
         `SELECT name FROM address WHERE id = ? `
     ).bind(id).first("name");
-    const jwt = await Jwt.sign({
-        address: name,
-        address_id: id
-    }, c.env.JWT_SECRET, "HS256")
+    if (typeof name !== 'string') return c.text('邮箱不存在',404);
+    const jwt = await mailboxToken(c.env, id, name);
     return c.json({
         jwt: jwt
     })

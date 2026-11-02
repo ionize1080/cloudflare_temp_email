@@ -35,6 +35,8 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/open_api/settings') return json({ title: 'IONACS Mail', domains: ['ionacs.com'], defaultDomains: ['ionacs.com'], enableUserDeleteEmail: true, enableUserCreateEmail: true, enableAddressPassword: true });
   if (url.pathname === '/user_api/open_settings') return json({ enable: false });
   const body = async () => { let raw = ''; for await (const chunk of req) raw += chunk; return JSON.parse(raw || '{}'); };
+  if (url.pathname === '/open_api/admin_login') return (await body()).password === 'preview-admin' ? json({token:'preview-admin'}) : json({error:'本地管理员密码为 preview-admin'},401);
+  if (url.pathname === '/open_api/credential_login') return (await body()).credential === 'preview-only' ? json({jwt:'preview-only'}) : json({error:'无效的本地测试凭据'},401);
   if (url.pathname === '/api/new_address') { const input = await body(); try { const hashed = await hashPassword(input.password); const address = input.name + '@' + input.domain; sql.prepare('INSERT INTO address(name, password) VALUES(?,?)').run(address, hashed); activeAddress = address; return json({ jwt: 'preview-only', address }); } catch (e) { return json({ error: e.message }, 400); } }
   if (url.pathname === '/api/address_login') { const input = await body(); const row = sql.prepare('SELECT * FROM address WHERE name = ?').get(input.email); if (!await verifyPassword(input.password, row?.password)) return json({ error: '账号或密码错误' }, 401); activeAddress = row.name; return json({ jwt: 'preview-only', address: row.name }); }
   if (url.pathname.startsWith('/admin/')) {

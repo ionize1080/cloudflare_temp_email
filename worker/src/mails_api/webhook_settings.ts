@@ -1,3 +1,4 @@
+import { webhookRequest } from '../../../shared/outbound-url.mjs';
 import { Context } from "hono";
 import { CONSTANTS } from "../constants";
 import { AdminWebhookSettings, WebhookSettings } from "../models";
@@ -27,6 +28,7 @@ async function saveWebhookSettings(c: Context<HonoCustomType>): Promise<Response
         return c.text(msgs.WebhookNotAllowedForUserMsg, 403);
     }
     const settings = await c.req.json<WebhookSettings>();
+    try { if(settings.enabled) webhookRequest(settings); } catch { return c.text('Webhook 配置无效，仅支持公共 HTTPS 地址',400); }
     await c.env.KV.put(
         `${CONSTANTS.WEBHOOK_KV_USER_SETTINGS_KEY}:${address}`,
         JSON.stringify(settings));
@@ -36,6 +38,9 @@ async function saveWebhookSettings(c: Context<HonoCustomType>): Promise<Response
 async function testWebhookSettings(c: Context<HonoCustomType>): Promise<Response> {
     const settings = await c.req.json<WebhookSettings>();
     const { address } = c.get("jwtPayload");
+    const allowed=await c.env.KV.get<AdminWebhookSettings>(CONSTANTS.WEBHOOK_KV_SETTINGS_KEY,'json');
+    if(allowed?.enableAllowList&&!allowed.allowList.includes(address))return c.text('无权测试 Webhook',403);
+    try { webhookRequest(settings); } catch { return c.text('Webhook 配置无效',400); }
     // random raw email
     const { id: mailId, raw } = await c.env.DB.prepare(
         `SELECT id, raw FROM raw_mails WHERE address = ? ORDER BY RANDOM() LIMIT 1`

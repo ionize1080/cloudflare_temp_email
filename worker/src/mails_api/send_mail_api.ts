@@ -1,7 +1,6 @@
 import { Context, Hono } from 'hono'
 import { Jwt } from 'hono/utils/jwt'
 import { createMimeMessage } from 'mimetext';
-import { Resend } from 'resend';
 import { WorkerMailer, WorkerMailerOptions } from 'worker-mailer';
 
 import i18n from '../i18n';
@@ -67,21 +66,19 @@ const sendMailByResend = async (
     const token = c.env[
         `RESEND_TOKEN_${mailDomain.replace(/\./g, "_").toUpperCase()}`
     ] || c.env.RESEND_TOKEN;
-    const resend = new Resend(token);
-    const { data, error } = await resend.emails.send({
-        from: reqJson.from_name ? `${reqJson.from_name} <${address}>` : address,
-        to: reqJson.to_name ? `${reqJson.to_name} <${reqJson.to_mail}>` : reqJson.to_mail,
-        subject: reqJson.subject,
-        ...(reqJson.is_html ? {
-            html: reqJson.content,
-        } : {
-            text: reqJson.content,
-        })
+    const response=await fetch('https://api.resend.com/emails', {
+        method:'POST', headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'}, signal:AbortSignal.timeout(20000),
+        body:JSON.stringify({
+            from:reqJson.from_name?`${reqJson.from_name} <${address}>`:address,
+            to:reqJson.to_name?`${reqJson.to_name} <${reqJson.to_mail}>`:reqJson.to_mail,
+            subject:reqJson.subject,
+            ...(reqJson.is_html?{html:reqJson.content}:{text:reqJson.content}),
+        }),
     });
-    if (error) {
-        throw new Error(`Resend error: ${error.name} ${error.message}`);
-    }
-    console.log(`Resend success: ${JSON.stringify(data)}`);
+    if (!response.ok) { await response.body?.cancel(); throw new Error('发件服务暂不可用'); }
+    const result=await response.json<{id?:string}>();
+    if (!result.id) throw new Error('投递状态待确认');
+
 }
 
 const sendMailBySmtp = async (

@@ -69,7 +69,7 @@ const user = ref({
     password: "",
     code: ""
 });
-const cfToken = ref("")
+const cfToken = ref(''), loginChallenge=ref(null)
 
 const emailLogin = async () => {
     if (!user.value.email || !user.value.password) {
@@ -82,13 +82,14 @@ const emailLogin = async () => {
             body: JSON.stringify({
                 email: user.value.email,
                 // hash password
-                password: await hashPassword(user.value.password)
+                password: await hashPassword(user.value.password),
+                cf_token: cfToken.value
             })
         });
         userJwt.value = res.jwt;
         location.reload();
     } catch (error) {
-        message.error(error.message || "login failed");
+        message.error(error.message || "login failed"); loginChallenge.value?.reset();
     }
 };
 
@@ -169,6 +170,7 @@ const passkeyLogin = async () => {
             method: 'POST',
             body: JSON.stringify({
                 domain: location.hostname,
+                cf_token: cfToken.value,
             })
         })
         const credential = await startAuthentication(options)
@@ -179,6 +181,7 @@ const passkeyLogin = async () => {
             body: JSON.stringify({
                 origin: location.origin,
                 domain: location.hostname,
+                cf_token: cfToken.value,
                 credential
             })
         })
@@ -186,19 +189,19 @@ const passkeyLogin = async () => {
         location.reload();
     } catch (e) {
         console.error(e)
-        message.error(e.message)
+        message.error(e.message); loginChallenge.value?.reset();
     }
 };
 
 const oauth2Login = async (clientID) => {
     try {
         userOauth2SessionClientID.value = clientID;
-        userOauth2SessionState.value = Math.random().toString(36).substring(2);
-        const res = await api.fetch(`/user_api/oauth2/login_url?clientID=${clientID}&state=${userOauth2SessionState.value}`);
+        const res = await api.fetch('/user_api/oauth2/login_url',{method:'POST',body:JSON.stringify({clientID,cf_token:cfToken.value})});
+        userOauth2SessionState.value = res.state;
         // redirect to oauth2 login page
         location.href = res.url;
     } catch (error) {
-        message.error(error.message || "login failed");
+        message.error(error.message || "login failed"); loginChallenge.value?.reset();
     }
 };
 
@@ -218,6 +221,7 @@ onMounted(async () => {
                     <n-form-item-row :label="t('password')" required>
                         <n-input v-model:value="user.password" type="password" show-password-on="click" />
                     </n-form-item-row>
+                    <Turnstile ref="loginChallenge" v-model:value="cfToken" action="user_login" />
                     <n-button @click="emailLogin" type="primary" block secondary strong>
                         {{ t('login') }}
                     </n-button>

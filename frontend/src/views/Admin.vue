@@ -5,14 +5,15 @@ import { useMessage, useNotification } from 'naive-ui';
 import { useGlobalState } from '../store';
 import { api } from '../api';
 import MailIcon from '../components/MailIcon.vue';
+import Turnstile from '../components/Turnstile.vue';
 import '../styles/mail.css';
 import '../styles/admin.css';
 
-const { adminAuth, showAdminAuth, adminTab, isDark, toggleDark } = useGlobalState();
+const { openSettings, adminAuth, showAdminAuth, adminTab, isDark, toggleDark } = useGlobalState();
 const route = useRoute(), router = useRouter(), message = useMessage(), notification = useNotification();
 const ready = ref(false), busy = ref(false), error = ref(''), password = ref(''), navigation = ref(''), mobileNav = ref(false);
 const overview = ref(null), refreshKey = ref(0), audit = ref([]), auditCount = ref(0), auditPage = ref(1), auditLoading = ref(false);
-const navInput = ref(null);
+const navInput = ref(null), cfToken=ref(''), challenge=ref(null);
 const navGroups = [
   { label: '工作空间', items: [
     ['overview', '管理概览', 'inbox', '邮箱运行概况与待办'],
@@ -85,7 +86,14 @@ async function refreshOverview() {
   catch (e) { if (e.message.includes('401')) { lock(); error.value = hadCredential ? '请输入有效的管理员密码。' : ''; } else error.value = e.message; }
   finally { busy.value = false; }
 }
-async function login() { adminAuth.value = password.value; await refreshOverview(); password.value = ''; if (ready.value && adminTab.value === 'audit') await loadAudit(); }
+async function login() {
+  if(openSettings.value.cfTurnstileSiteKey&&!cfToken.value){error.value='请先完成人机验证';return;}
+  busy.value=true;error.value='';
+  try {const result=await api.fetch('/open_api/admin_login',{method:'POST',quiet:true,body:JSON.stringify({password:password.value,cf_token:cfToken.value})});adminAuth.value=result.token;password.value='';await refreshOverview();if(ready.value&&adminTab.value==='audit')await loadAudit();}
+  catch(e){error.value=e.message;challenge.value?.reset();}
+  finally{busy.value=false;}
+}
+
 async function loadAudit() {
   auditLoading.value = true;
   try { const res = await api.fetch('/admin/audit?offset=' + (auditPage.value - 1) * 50, { quiet: true }); audit.value = res.results || []; auditCount.value = res.count || 0; }
@@ -121,7 +129,7 @@ onBeforeUnmount(() => { clearInterval(timer); document.removeEventListener('poin
       <div class="header-actions"><span class="private-badge"><MailIcon name="shield" :size="15" />管理控制台</span><a href="/" class="admin-inbox-link">返回邮箱</a><button class="icon-button" aria-label="切换明暗外观" @click="toggleDark()"><MailIcon name="sun" /></button><button v-if="ready" class="icon-button" aria-label="锁定管理页面" title="锁定管理页面" @click="lock"><MailIcon name="lock" /></button></div>
     </header>
     <main v-if="!ready" class="login-stage">
-      <section class="login-card"><div class="login-intro"><span class="brand-mark large"><MailIcon name="shield" :size="32" /></span><p class="eyebrow">IONACS ADMIN</p><h1>让管理有序，<br>让沟通安心。</h1><p>集中管理邮箱、发件申请与访问规则。<br>你的私人邮件空间，从这里开始。</p><div class="login-security"><MailIcon name="shield" :size="18" />独立管理员鉴权 · 操作记录</div></div><form class="login-form admin-login-form" @submit.prevent="login"><p class="eyebrow">管理控制台</p><h2>验证管理员身份</h2><p class="muted">输入管理密码继续。无需单独的管理员用户名。</p><label class="field-label">管理密码<input v-model="password" type="password" required autocomplete="current-password" aria-label="管理密码" /></label><p v-if="error" class="mail-error" role="alert">{{ error }}</p><button class="primary-button" :disabled="busy">{{ busy ? '正在验证…' : '进入管理控制台' }}</button><div class="login-links"><a href="/">返回邮箱</a><span>密码不会显示在管理概览中</span></div></form></section>
+      <section class="login-card"><div class="login-intro"><span class="brand-mark large"><MailIcon name="shield" :size="32" /></span><p class="eyebrow">IONACS ADMIN</p><h1>让管理有序，<br>让沟通安心。</h1><p>集中管理邮箱、发件申请与访问规则。<br>你的私人邮件空间，从这里开始。</p><div class="login-security"><MailIcon name="shield" :size="18" />独立管理员鉴权 · 操作记录</div></div><form class="login-form admin-login-form" @submit.prevent="login"><p class="eyebrow">管理控制台</p><h2>验证管理员身份</h2><p class="muted">输入管理密码继续。无需单独的管理员用户名。</p><label class="field-label">管理密码<input v-model="password" type="password" required autocomplete="current-password" aria-label="管理密码" /></label><Turnstile ref="challenge" v-model:value="cfToken" action="admin_login" /><p v-if="error" class="mail-error" role="alert">{{ error }}</p><button class="primary-button" :disabled="busy">{{ busy ? '正在验证…' : '进入管理控制台' }}</button><div class="login-links"><a href="/">返回邮箱</a><span>密码不会显示在管理概览中</span></div></form></section>
     </main>
     <div v-else class="mail-layout admin-layout">
       <button v-if="mobileNav" class="mobile-shade" aria-label="收起管理导航" @click="mobileNav = false"></button>

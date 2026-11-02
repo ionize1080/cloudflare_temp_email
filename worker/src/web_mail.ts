@@ -148,8 +148,8 @@ webMailApi.get('/admin/storage_health', async c => {
     catch(error){return c.json({error:error instanceof Error?error.message:'unknown'},503);}
 });
 webMailApi.get('/open_api/storage_health', async c => {
-    try { const r=await storageFetch(c.env,'health'); if(!r.ok) console.warn(JSON.stringify({event:'storage_probe_failed',status:r.status})); await r.body?.cancel(); return c.json({ok:r.ok},r.ok?200:503); }
-    catch (error) { console.warn(JSON.stringify({event:'storage_probe_error',message:error instanceof Error?error.message:'unknown'})); return c.json({ok:false},503); }
+    try { const r=await storageFetch(c.env,'health'); if(!r.ok) console.warn(JSON.stringify({event:'storage_probe_failed',status:r.status,contentType:r.headers.get('content-type'),challenge:r.headers.get('cf-mitigated')})); await r.body?.cancel(); return c.json({ok:r.ok,status:r.status},r.ok?200:503); }
+    catch (error) { console.warn(JSON.stringify({event:'storage_probe_error',message:error instanceof Error?error.message:'unknown'})); return c.json({ok:false,status:0},503); }
 });
 
 export async function cleanupAttachments(env: Bindings) {

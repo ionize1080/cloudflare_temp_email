@@ -1,3 +1,4 @@
+import { verifyTurnstile } from '../../shared/turnstile.mjs';
 import { Context } from "hono";
 import { createMimeMessage } from "mimetext";
 
@@ -264,31 +265,9 @@ export const sendAdminInternalMail = async (
     }
 };
 
-export const checkCfTurnstile = async (
-    c: Context<HonoCustomType>, token: string | undefined | null
-): Promise<void> => {
-    if (!c.env.CF_TURNSTILE_SITE_KEY || !c.env.CF_TURNSTILE_SECRET_KEY) {
-        return;
-    }
-    if (!token) {
-        throw new Error("Captcha token is required");
-    }
-    const reqIp = c.req.raw.headers.get("cf-connecting-ip");
-    const formData = new FormData();
-    formData.append('secret', c.env.CF_TURNSTILE_SECRET_KEY);
-    formData.append('response', token);
-    if (reqIp) formData.append('remoteip', reqIp);
-    const url = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
-    const result = await fetch(url, {
-        body: formData,
-        method: 'POST',
-    });
-    const captchaRes: any = await result.json();
-    if (!captchaRes.success) {
-        console.log("Captcha failed", captchaRes);
-        throw new Error("Captcha failed");
-    }
-}
+export const checkCfTurnstile = async (c: Context<HonoCustomType>, token: string | undefined | null, action='signup'): Promise<void> => {
+    if(!await verifyTurnstile(c.env,token,action,c.req.header('cf-connecting-ip')))throw new Error('请完成人机验证后重试');
+};
 
 export const checkUserPassword = (password: string) => {
     if (!password || password.length < 1 || password.length > 100) {

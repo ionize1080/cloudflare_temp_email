@@ -7,6 +7,7 @@ import { CleanupSettings } from './models';
 import { executeCustomSqlCleanup } from './admin_api/cleanup_api';
 
 export async function scheduled(event: ScheduledEvent, env: Bindings, ctx: any) {
+    await env.DB.prepare('DELETE FROM auth_challenges WHERE expires_at<=unixepoch()').run();
     await cleanupAttachments(env);
     console.log("Scheduled event: ", event);
     const autoCleanupSetting = await getJsonSetting<CleanupSettings>(

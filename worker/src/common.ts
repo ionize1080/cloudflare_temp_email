@@ -1,6 +1,7 @@
+import { webhookRequest } from '../../shared/outbound-url.mjs';
+import { mailboxToken } from './sessions';
 import { registerInvitedAddress } from '../../shared/invitations.mjs';
 import { Context } from 'hono';
-import { Jwt } from 'hono/utils/jwt'
 
 import { getBooleanValue, getDomains, getStringValue, getIntValue, getUserRoles, getDefaultDomains, getJsonSetting, getAnotherWorkerList } from './utils';
 import { hashPassword, randomAppPassword } from '../../shared/passwords.mjs';
@@ -224,11 +225,7 @@ export const newAddress = async (
     const generatedPassword = password ? null : await generatePasswordForAddress(c, name);
 
     // create jwt
-    const jwt = await Jwt.sign({
-        address: name,
-        address_id: address_id,
-        iat: Math.floor(Date.now()/1000), exp: Math.floor(Date.now()/1000)+30*86400
-    }, c.env.JWT_SECRET, "HS256")
+    const jwt = await mailboxToken(c.env, address_id, name);
     return {
         jwt: jwt,
         address: name,
@@ -511,7 +508,7 @@ export const getAllowDomains = async (c: Context<HonoCustomType>): Promise<strin
 export async function sendWebhook(
     settings: WebhookSettings, formatMap: WebhookMail
 ): Promise<{ success: boolean, message?: string }> {
-    // send webhook
+    const target=webhookRequest(settings);
     let body = settings.body;
     for (const key of Object.keys(formatMap)) {
         body = body.replace(
@@ -521,16 +518,18 @@ export async function sendWebhook(
             ).replace(/^"(.*)"$/, '$1')
         );
     }
-    const response = await fetch(settings.url, {
+    const response = await fetch(target.url, {
         method: settings.method,
-        headers: JSON.parse(settings.headers),
+        headers: target.headers,
+        redirect: 'manual', signal:AbortSignal.timeout(10000),
         body: body
     });
     if (!response.ok) {
-        console.log("send webhook error", settings.url, settings.method, settings.headers, body);
+        await response.body?.cancel();
         console.log("send webhook error", response.status, response.statusText);
         return { success: false, message: `send webhook error: ${response.status} ${response.statusText}` };
     }
+    await response.body?.cancel();
     return { success: true }
 }
 

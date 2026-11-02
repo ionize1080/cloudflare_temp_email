@@ -16,6 +16,6 @@ export function validateCompose(input) {
   return { to, cc: cc.filter(v => !to.includes(v)), bcc: bcc.filter(v => !to.includes(v) && !cc.includes(v)), all, attachments: [...new Set(input.attachments || [])] };
 }
 export function validateAttachment(filename, size) {
-  if (typeof filename !== 'string' || !filename.length || filename.length > 180 || /[\x00-\x1f\x7f/\\]/.test(filename) || BLOCKED_FILE.test(filename)) throw new Error('不支持此附件名称或可执行文件类型');
+  if (typeof filename !== 'string' || !filename.length || filename.length > 180 || /[\x00-\x1f\x7f/\\]/.test(filename) || /[.\s]$/.test(filename) || /[\u202a-\u202e\u2066-\u2069]/.test(filename) || BLOCKED_FILE.test(filename)) throw new Error('不支持此附件名称或可执行文件类型');
   if (!Number.isSafeInteger(size) || size < 1 || size > MAX_ATTACHMENTS) throw new Error('附件大小需在 1 字节至 25 MB 之间');
 }

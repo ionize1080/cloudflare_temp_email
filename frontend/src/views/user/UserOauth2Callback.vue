@@ -45,6 +45,7 @@ onMounted(async () => {
             method: 'POST',
             body: JSON.stringify({
                 code: code,
+                state: state,
                 clientID: userOauth2SessionClientID.value
             })
         });

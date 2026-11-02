@@ -1,3 +1,4 @@
+import { hashPasswordDigest } from '../../../shared/passwords.mjs';
 import { Context } from 'hono';
 
 import { CONSTANTS } from '../constants';
@@ -76,7 +77,7 @@ export default {
                 `INSERT INTO users (user_email, password, user_info)`
                 + ` VALUES (?, ?, ?)`
             ).bind(
-                email, password, JSON.stringify(userInfo)
+                email, await hashPasswordDigest(password), JSON.stringify(userInfo)
             ).run();
             if (!success) {
                 return c.text(msgs.FailedToRegisterMsg, 500)
@@ -114,7 +115,7 @@ export default {
             checkUserPassword(password);
             const { success } = await c.env.DB.prepare(
                 `UPDATE users SET password = ? WHERE id = ?`
-            ).bind(password, user_id).run();
+            ).bind(await hashPasswordDigest(password), user_id).run();
             if (!success) {
                 return c.text(msgs.FailedUpdatePasswordMsg, 500)
             }
