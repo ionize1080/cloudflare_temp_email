@@ -30,7 +30,7 @@ Cloudflare Workers Builds watches `main` in this repository, rooted at `navigati
 
 Deployment applies only additive navigation migrations via the separate `nav_migrations` table, warms wallpaper cache, prepares a managed Turnstile widget, uploads its secret, and attaches the root domain using Cloudflare Worker Custom Domains. Existing mailbox routing and email records are not edited.
 
-The account ID comes from the checked-in mailbox deployment configuration. The build token has Workers Scripts, Cloudflare Pages, D1, Workers KV and Turnstile write permissions for that account, plus Workers Routes write and Zone read permissions for ionacs.com. Secrets are passed in memory/stdin and never committed. DNS/Access conflicts fail deployment rather than disabling protections.
+The account ID comes from the checked-in mailbox deployment configuration. The build token has Workers Scripts, Cloudflare Pages, D1, Workers KV and Turnstile write permissions for that account, plus Workers Routes write and Zone read permissions for ionacs.com. The Turnstile secret is deployed atomically with the Worker using a private temporary file (0600), removed in `finally`; deployment tokens stay in memory/environment. Secrets are never committed. DNS/Access conflicts fail deployment rather than disabling protections.
 
 Inspect Workers Builds results and the public health check to verify publication. To roll back, revert a navigation commit and let Workers Builds deploy the previous code. Additive navigation tables are retained; no mail records are dropped.
 

@@ -1,5 +1,7 @@
 import { deploymentEnvironment } from './deploy-env.mjs';
-import {readFile,writeFile,unlink} from 'node:fs/promises';
+import {readFile,writeFile,unlink,mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {spawn} from 'node:child_process';
 import {refreshWallpapers} from '../src/wallpapers.mjs';
 const config=JSON.parse(await readFile(new URL('../wrangler.json',import.meta.url),'utf8'));
@@ -29,7 +31,10 @@ if(!sitekey||!secret)throw new Error('Turnstile keys unavailable. Set TURNSTILE_
 if(process.env.GITHUB_ACTIONS)console.log('::add-mask::'+secret);
 config.vars.TURNSTILE_SITE_KEY=sitekey;config.account_id=account;
 const configPath='wrangler.deploy.json';
+const secretDirectory=await mkdtemp(join(tmpdir(),'ionacs-deploy-'));
+const secretsPath=join(secretDirectory,'secrets.json');
 try{
+ await writeFile(secretsPath,JSON.stringify({TURNSTILE_SECRET_KEY:secret}),{mode:0o600});
  await writeFile(configPath,JSON.stringify({...config,routes:[],workers_dev:false},null,2));
  await run(['d1','migrations','apply','DB','--remote','--config',configPath]);
  // Populate the most recent seven days before the first visitor arrives.
@@ -37,16 +42,11 @@ try{
  const DB={prepare(statement){return{bind(...params){return{async run(){return sql(statement,params);},statement,params};},async run(){return sql(statement);}};},async batch(statements){const results=[];for(const s of statements)results.push(await sql(s.statement,s.params));return results;}};
  const WALLPAPERS={async get(key){const res=await fetch(`${base}/storage/kv/namespaces/${namespace}/values/${encodeURIComponent(key)}`,{headers:{Authorization:`Bearer ${token}`}});if(res.status===404)return null;if(!res.ok)throw new Error('Wallpaper KV read failed');return res.arrayBuffer();},async put(key,value,options){const metadata=JSON.stringify(options.metadata);const form=new FormData();form.set('value',new Blob([value]));form.set('metadata',metadata);await cf(`/storage/kv/namespaces/${namespace}/values/${encodeURIComponent(key)}?expiration_ttl=${options.expirationTtl}`,{method:'PUT',body:form});}};
  await refreshWallpapers({DB,WALLPAPERS});
- // First deploy has no public route; a pre-existing deployment keeps its route on update.
- const existingWorker=await fetch(`${base}/workers/scripts/${config.name}/settings`,{headers:{Authorization:`Bearer ${token}`}});
- if(existingWorker.status===404)await run(['deploy','--config',configPath,'--minify']);
- else if(!existingWorker.ok)throw new Error('Unable to inspect existing Worker');
- await run(['secret','put','TURNSTILE_SECRET_KEY','--config',configPath],secret+'\n');
  // Publish the mailbox handoff receiver before navigation starts issuing tickets.
  await run(['deploy','--config','../worker/wrangler.production.jsonc','--minify'],undefined,process.cwd(),true);
  await run(['pages','deploy','../frontend/dist','--project-name','frontend','--branch','main'],undefined,new URL('../../pages/',import.meta.url).pathname);
  await writeFile(configPath,JSON.stringify(config,null,2));
- await run(['deploy','--config',configPath,'--minify']);
+ await run(['deploy','--config',configPath,'--minify','--secrets-file',secretsPath]);
  // New custom-domain DNS and certificates can take time to propagate.
  let healthy=false;
  for(let attempt=0;attempt<12;attempt++){
@@ -56,4 +56,4 @@ try{
  }
  if(!healthy)throw new Error('Deployment completed but public health verification failed. Inspect DNS and existing Access policies.');
  console.log('Verified deployment: https://ionacs.com');
-}finally{await unlink(configPath).catch(()=>{});}
+}finally{await unlink(configPath).catch(()=>{});await rm(secretDirectory,{recursive:true,force:true});}
