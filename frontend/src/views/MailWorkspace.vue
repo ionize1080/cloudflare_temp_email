@@ -25,6 +25,7 @@ import { MAX_ATTACHMENTS, validateAttachment, recipients } from '../../../shared
 const { settings, openSettings, jwt, auth, adminAuth, userJwt, userSettings, isDark, toggleDark, sendMailModel, indexTab } = useGlobalState();
 const message = useMessage(), notification = useNotification(), router = useRouter();
 const folder = ref('inbox'), query = ref(''), appliedQuery = ref(''), page = ref(1), total = ref(0);
+const delivery = ref(null), deliveryBusy = ref(false);
 const rows = ref([]), selected = ref(null), checked = ref([]), busy = ref(false), error = ref('');
 const sidebar = ref(false), composing = ref(false), minimized = ref(false), expanded = ref(false), sending = ref(false);
 const isMobile = useMediaQuery('(max-width:760px)'), navCollapsed = ref(false);
@@ -88,7 +89,20 @@ function switchFolder(value) { folder.value = value; page.value = 1; selected.va
 function search() { appliedQuery.value = query.value.trim(); page.value = 1; selected.value = null; refresh(); }
 function paginate(delta) { page.value += delta; selected.value = null; refresh(); }
 function toggleFlag(id, key) { flags.value = { ...flags.value, [flagKey(id)]: { ...flag(id), [key]: !flag(id)[key] } }; }
-function openMail(row) { selected.value = row; flags.value = { ...flags.value, [flagKey(row.id)]: { ...flag(row.id), read: true } }; }
+async function checkDelivery() {
+  const row=selected.value, owner=address.value; if(!row || deliveryBusy.value)return;
+  deliveryBusy.value=true;
+  try { const result=await api.fetch(`/api/sendbox/${row.id}/delivery`,{quiet:true}); if(selected.value?.id===row.id && address.value===owner) delivery.value=result; }
+  catch { if(selected.value?.id===row.id && address.value===owner) delivery.value={status:'unknown',message:'暂时无法查询投递状态'}; }
+  finally { deliveryBusy.value=false; }
+}
+function editSent() {
+  if(draftExists.value && !window.confirm('当前草稿将被替换。继续吗？'))return;
+  const row=selected.value;
+  draft.value={...emptyDraft(),to:row.to,cc:(row.cc||[]).join(', '),bcc:(row.bcc||[]).join(', '),subject:row.subject,html:row.message||plainHtml(row.text),attachments:(row.attachments||[]).map(a=>({id:a.id,filename:a.filename,size:a.size}))};
+  showCc.value=!!draft.value.cc;showBcc.value=!!draft.value.bcc;compose();
+}
+function openMail(row) { selected.value = row; delivery.value=null; if(folder.value==='sent') checkDelivery(); flags.value = { ...flags.value, [flagKey(row.id)]: { ...flag(row.id), read: true } }; }
 function selectAll() { checked.value = allChecked.value ? [] : rows.value.map(r => r.id); }
 function askDelete(ids) { pendingDelete.value = ids; deleteOpen.value = true; }
 async function deleteMails() {
@@ -118,7 +132,7 @@ async function send() {
     const content=DOMPurify.sanitize(draft.value.html || plainHtml(draft.value.body),{FORBID_TAGS:['img','svg','math','style','iframe','form'],FORBID_ATTR:['src','srcset','background']});
     await api.fetch('/api/send_mail', { method: 'POST', quiet: true, timeout: 60000, body: JSON.stringify({ to: draft.value.to, cc: draft.value.cc, bcc: draft.value.bcc, subject: draft.value.subject.trim(), content, is_html: true, attachments: (draft.value.attachments || []).map(a=>a.id), send_id: draft.value.send_id }) });
     draft.value = emptyDraft(); composing.value = false;
-    message.success('邮件已提交发送'); switchFolder('sent'); await api.getSettings();
+    message.success('发送服务已受理，可在已发送邮件中查看投递状态'); switchFolder('sent'); await api.getSettings();
   } catch (e) { if(e.resetSendId) draft.value.send_id=crypto.randomUUID(); message.error(`发送失败，草稿已保留。${e.message}`); }
   finally { sending.value = false; }
 }
@@ -190,7 +204,7 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload',beforeUnload);
         <div v-if="error" class="mail-error" role="alert">{{ error }}<button @click="refresh">重试</button></div>
         <div v-if="busy" class="mail-progress" role="status" aria-label="正在加载邮件"></div>
 
-        <article v-if="selected" class="reading-pane"><h1>{{ selected.subject || '（无主题）' }}</h1><div class="sender-heading"><div class="sender-avatar">{{ senderName(selected)[0]?.toUpperCase() }}</div><div><strong>{{ senderName(selected) }}</strong><p>{{ sender(selected) }}</p><small>收件人：{{ selected.to || selected.address || address }}</small><small v-if="selected.cc?.length" style="display:block">抄送：{{selected.cc.join(', ')}}</small><small v-if="selected.bcc?.length" style="display:block">密送：{{selected.bcc.join(', ')}}</small></div><button class="icon-button star-button" :class="{ starred: flag(selected.id).starred }" aria-label="切换星标" :aria-pressed="!!flag(selected.id).starred" @click="toggleFlag(selected.id, 'starred')"><MailIcon name="star" /></button></div><SafeMail v-if="selected.message" :html="selected.message" /><pre v-else class="plain-message">{{ selected.text }}</pre><div v-if="selected.attachments?.length" class="attachments"><a v-for="a in selected.attachments" :key="a.id" :href="a.server ? undefined : a.url" :download="a.filename" @click="a.server && downloadAttachment(a)" rel="noopener noreferrer"><MailIcon name="attach" /><span>{{ a.filename }}<small>{{ a.server ? fileSize(a.size) : a.size }}</small></span><MailIcon name="download" :size="18" /></a></div><div v-if="folder !== 'sent'" class="reading-actions"><button class="outline-button" @click="reply()"><MailIcon name="reply" />回复</button><button class="outline-button" @click="reply(true)"><MailIcon name="send" />转发</button></div></article>
+        <article v-if="selected" class="reading-pane"><h1>{{ selected.subject || '（无主题）' }}</h1><div class="sender-heading"><div class="sender-avatar">{{ senderName(selected)[0]?.toUpperCase() }}</div><div><strong>{{ senderName(selected) }}</strong><p>{{ sender(selected) }}</p><small>收件人：{{ selected.to || selected.address || address }}</small><small v-if="selected.cc?.length" style="display:block">抄送：{{selected.cc.join(', ')}}</small><small v-if="selected.bcc?.length" style="display:block">密送：{{selected.bcc.join(', ')}}</small></div><button class="icon-button star-button" :class="{ starred: flag(selected.id).starred }" aria-label="切换星标" :aria-pressed="!!flag(selected.id).starred" @click="toggleFlag(selected.id, 'starred')"><MailIcon name="star" /></button></div><div v-if="folder === 'sent'" class="delivery-status" role="status"><span>{{ deliveryBusy ? '正在查询投递状态…' : delivery?.message || '投递状态待查询' }}</span><button class="text-button" :disabled="deliveryBusy" @click="checkDelivery">刷新状态</button><button v-if="['failed','bounced','suppressed'].includes(delivery?.status)" class="text-button" @click="editSent">重新编辑</button></div><SafeMail v-if="selected.message" :html="selected.message" /><pre v-else class="plain-message">{{ selected.text }}</pre><div v-if="selected.attachments?.length" class="attachments"><a v-for="a in selected.attachments" :key="a.id" :href="a.server ? undefined : a.url" :download="a.filename" @click="a.server && downloadAttachment(a)" rel="noopener noreferrer"><MailIcon name="attach" /><span>{{ a.filename }}<small>{{ a.server ? fileSize(a.size) : a.size }}</small></span><MailIcon name="download" :size="18" /></a></div><div v-if="folder !== 'sent'" class="reading-actions"><button class="outline-button" @click="reply()"><MailIcon name="reply" />回复</button><button class="outline-button" @click="reply(true)"><MailIcon name="send" />转发</button></div></article>
 
         <template v-else-if="folder === 'drafts'"><div class="folder-heading"><h1>草稿</h1><p>草稿仅保存在当前浏览器会话，关闭浏览器或退出登录后清除。</p></div><button v-if="draftExists" class="draft-row" @click="compose"><MailIcon name="draft" /><span><strong>{{ draft.subject || '（无主题）' }}</strong><small>{{ draft.to || '尚未填写收件人' }}</small></span><span class="draft-label">草稿</span></button><div v-else class="mail-empty"><MailIcon name="draft" :size="52" /><h2>还没有草稿</h2><p>未发送的邮件会暂存在这里。</p><button class="text-button" @click="compose">写一封邮件</button></div></template>
         <template v-else><div class="inbox-tabs"><span class="active"><MailIcon :name="folder === 'sent' ? 'send' : 'inbox'" :size="19" />{{ appliedQuery ? '搜索结果' : title }}</span><small>{{ appliedQuery ? '在当前文件夹中搜索' : '所有邮件，尽在此处' }}</small></div><div v-if="!rows.length && !busy && !error" class="mail-empty"><div class="empty-illustration"><MailIcon :name="appliedQuery ? 'search' : 'inbox'" :size="54" /><i></i></div><h2>{{ appliedQuery ? '没有找到匹配的邮件' : folder === 'sent' ? '还没有已发送的邮件' : '收件箱很清爽' }}</h2><p>{{ appliedQuery ? '换一个关键词，再试一次。' : folder === 'sent' ? '发出的每一封邮件，都会在这里留存。' : '新的来信会出现在这里。你也可以开始一段对话。' }}</p><button v-if="!appliedQuery" class="text-button" @click="compose">写一封邮件</button></div><div class="mail-list"><div v-for="row in rows" :key="row.id" class="mail-row" :class="{ unread: folder === 'inbox' && !flag(row.id).read, selected: checked.includes(row.id) }"><input type="checkbox" v-model="checked" :value="row.id" :aria-label="`选择 ${row.subject || '无主题'}`" /><button class="icon-button star-button" :class="{ starred: flag(row.id).starred }" :aria-label="`${flag(row.id).starred ? '取消' : '添加'}星标`" :aria-pressed="!!flag(row.id).starred" @click="toggleFlag(row.id, 'starred')"><MailIcon name="star" :size="19" /></button><button class="mail-row-content" @click="openMail(row)"><span class="row-sender">{{ senderName(row) }}</span><span class="row-summary"><strong>{{ row.subject || '（无主题）' }}</strong><span> — {{ subtitle(row) }}</span></span><MailIcon v-if="row.attachments?.length" name="attach" :size="16" /><time>{{ stamp(row.created_at) }}</time></button></div></div></template>

@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { providerBody } from '../../shared/provider-body.mjs';
 import { Jwt } from 'hono/utils/jwt';
 import { MAX_ATTACHMENTS, validateAttachment, validateCompose } from '../../shared/compose.mjs';
 import { reserveWeb, failWeb, finishWeb } from '../../shared/web-submissions.mjs';
@@ -83,14 +84,17 @@ webMailApi.post('/api/send_mail', async c => {
         const reserved=await reserveWeb(c.env.DB,identity,input.send_id,digest,validated.all.length);
         if (reserved.duplicate) return c.json({status:'ok',duplicate:true});
         row=reserved.row;
-        // Capabilities derive from the reservation, remaining identical across provider retries.
-        const providerAttachments=[];
-        for (const a of attachments) {
-            const access=await Jwt.sign({purpose:'outgoing-attachment',id:a.id,exp:row.created_at+86400},c.env.JWT_SECRET,'HS256');
-            providerAttachments.push({filename:a.filename,path:`https://mail.ionacs.com/open_api/outgoing_attachment/${a.id}?token=${access}`});
-        }
+        const payload={from:identity.address,to:validated.to,cc:validated.cc,bcc:validated.bcc,subject:input.subject||'（无主题）',...(input.is_html?{html:input.content}:{text:input.content})};
+        const encoded=providerBody(payload,attachments,(id: string)=>storageFetch(c.env,id));
+        const fixed=new FixedLengthStream(encoded.length);
+        const pipeline=encoded.body.pipeTo(fixed.writable);
+        // Observe the pipeline immediately; fetch can reject before the producer finishes.
+        pipeline.catch(()=>{});
         let response;
-        try { response=await fetch('https://api.resend.com/emails',{method:'POST',signal:AbortSignal.timeout(25000),headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json','Idempotency-Key':`web/${row.id}`},body:JSON.stringify({from:identity.address,to:validated.to,cc:validated.cc,bcc:validated.bcc,subject:input.subject||'（无主题）',...(input.is_html?{html:input.content}:{text:input.content}),attachments:providerAttachments})}); }
+        try {
+            response=await fetch('https://api.resend.com/emails',{method:'POST',signal:AbortSignal.timeout(55000),headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json','Idempotency-Key':`web/${row.id}`},body:fixed.readable});
+            await pipeline;
+        }
         catch { await failWeb(c.env.DB,row,false); return c.text('投递结果暂未确认，请保留原草稿并重试，不会重复扣减额度',503); }
         if (!response.ok) {
             const definitive=response.status>=400 && response.status<500 && ![408,409,425,429].includes(response.status);
@@ -99,12 +103,45 @@ webMailApi.post('/api/send_mail', async c => {
         }
         const result=await response.json<{id:string}>();
         if (!result.id) throw new Error('Uncertain result');
-        await finishWeb(c.env.DB,row,identity.address,result.id,archive,validated.attachments);
-        return c.json({status:'ok'});
+        await finishWeb(c.env.DB,row,identity.address,result.id,{...archive,submission_id:row.id},validated.attachments);
+        return c.json({status:'accepted',submission_id:row.id});
     } catch (error) {
         if (row) return c.text('投递状态待确认，请保留原草稿后重试',503);
         return c.text(error instanceof Error && /发送|邮件|收件|正文|附件|主题|邮箱/.test(error.message)?error.message:'请求无效',400);
     }
+});
+webMailApi.get('/api/sendbox/:id/delivery', async c => {
+    const {address,address_id}=c.get('jwtPayload');
+    const sent=await c.env.DB.prepare('SELECT raw FROM sendbox WHERE id=? AND address=?').bind(c.req.param('id'),address).first<{raw:string}>();
+    if (!sent) return c.text('邮件不存在',404);
+    let submission;
+    try { submission=JSON.parse(sent.raw).submission_id; } catch { /* legacy archive */ }
+    if (!submission) return c.json({status:'unknown',message:'历史邮件暂无投递状态'});
+    const row=await c.env.DB.prepare('SELECT provider_id FROM web_submissions WHERE id=? AND address_id=?').bind(submission,address_id).first<{provider_id:string}>();
+    if (!row?.provider_id) return c.json({status:'unknown',message:'投递状态待确认'});
+    const domain=address.split('@')[1];
+    const token=c.env[`RESEND_TOKEN_${domain.replace(/\./g,'_').toUpperCase()}`] || c.env.RESEND_TOKEN;
+    try {
+        const response=await fetch(`https://api.resend.com/emails/${encodeURIComponent(row.provider_id)}`,{headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(15000)});
+        if (!response.ok) return c.json({status:'unknown',message:'暂时无法查询投递状态，请稍后刷新'});
+        const data=await response.json<{last_event:string}>();
+        const labels:Record<string,string>={sent:'发送服务已受理，等待投递',delivered:'收件服务器已接收',opened:'收件服务器已接收',clicked:'收件服务器已接收',failed:'投递失败，请重新编辑后发送',bounced:'收件服务器退信，请检查收件地址',suppressed:'发送服务已阻止投递',delivery_delayed:'投递延迟，发送服务将继续尝试',queued:'排队等待投递'};
+        return c.json({status:data.last_event,message:labels[data.last_event]||'投递状态待确认'});
+    } catch { return c.json({status:'unknown',message:'暂时无法查询投递状态，请稍后刷新'}); }
+});
+webMailApi.get('/admin/outbound_status/:id', async c => {
+    const row = await c.env.DB.prepare('SELECT w.state,w.provider_id,a.name AS address FROM web_submissions w JOIN address a ON a.id=w.address_id WHERE w.id=?').bind(c.req.param('id')).first<{state:string,provider_id:string|null,address:string}>();
+    if (!row) return c.text('发件记录不存在',404);
+    if (!row.provider_id) return c.json({state:row.state,provider_id:null});
+    const domain=row.address.split('@')[1];
+    const token=c.env[`RESEND_TOKEN_${domain.replace(/\./g,'_').toUpperCase()}`] || c.env.RESEND_TOKEN;
+    if (!token) return c.text('发件服务尚未配置',503);
+    try {
+        const response=await fetch(`https://api.resend.com/emails/${encodeURIComponent(row.provider_id)}`,{headers:{Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(15000)});
+        if (!response.ok) return c.json({state:row.state,provider_id:row.provider_id,lookup_status:response.status},502);
+        const data=await response.json<{last_event?:string,created_at?:string,to?:string[],cc?:string[],bcc?:string[],message_id?:string}>();
+        return c.json({state:row.state,provider_id:row.provider_id,last_event:data.last_event,created_at:data.created_at,to:data.to,cc:data.cc,bcc:data.bcc,message_id:data.message_id});
+    } catch { return c.text('暂时无法查询投递状态',503); }
 });
 webMailApi.get('/admin/storage_health', async c => {
     try { const r=await storageFetch(c.env,'health'); await r.body?.cancel();return c.json({ok:r.ok,status:r.status}); }

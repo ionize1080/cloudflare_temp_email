@@ -25,7 +25,7 @@ const samples = [
   ['安全测试', 'HTML 邮件安全测试', '<h2>HTML 安全测试</h2><p>这段文字可以正常显示。</p><img src="https://tracker.invalid/pixel" onerror="alert(1)"><script>alert(1)</script><a href="javascript:alert(1)">不安全链接</a><a href="https://example.com">安全链接</a>'],
 ];
 let messages = samples.map(([name, subject, body], i) => ({ id: 100 - i, source: `${name} <sender${i}@example.com>`, address: 'alex@ionacs.com', created_at: `${day} ${String(9 + Math.floor(i / 2)).padStart(2, '0')}:30:00`, raw: `From: ${name} <sender${i}@example.com>\r\nTo: alex@ionacs.com\r\nSubject: ${subject}\r\nContent-Type: ${i === 7 ? 'text/html' : 'text/plain'}; charset=utf-8\r\n\r\n${body}` }));
-let sent = [];
+let sent = [{ id: 1, address: 'alex@ionacs.com', created_at: `${day} 09:00:00`, raw: JSON.stringify({version:'v2',to_mail:'recipient@example.com',cc:['copy@example.com'],subject:'附件投递状态预览',content:'<p>这是一封本地测试邮件。</p>',is_html:true,attachments:[{id:'preview-attachment',filename:'示例.md',size:128}]}) }];
 http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', 'http://localhost:5173');
   res.setHeader('Access-Control-Allow-Headers', '*'); res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
@@ -71,6 +71,7 @@ http.createServer(async (req, res) => {
   if (url.pathname === '/api/address_change_password') { try { sql.prepare('UPDATE address SET password = ? WHERE id = ?').run(await hashPassword((await body()).new_password), current.id); sql.prepare('DELETE FROM imap_passwords WHERE address_id = ?').run(current.id); return json({ success: true }); } catch (e) { return json({ error: e.message }, 400); } }
   if (url.pathname === '/api/settings') { const row = sql.prepare('SELECT * FROM address_sender WHERE address = ?').get('alex@ionacs.com'); return json({ address: activeAddress, send_balance: row?.enabled ? row.balance : 0, send_access_status: senderState(row), send_requested_at: row?.requested_at }); }
   if (url.pathname === '/api/request_send_mail_access') { const row = await requestSenderAccess(db, 'alex@ionacs.com'); return json({ status: 'ok', send_access_status: senderState(row) }); }
+  if (/^\/api\/sendbox\/\d+\/delivery$/.test(url.pathname)) return json({status:'failed',message:'投递失败，请重新编辑后发送'});
   if (url.pathname === '/api/mails' || url.pathname === '/api/sendbox') {
     const all = (url.pathname.endsWith('sendbox') ? sent : messages).filter(r => !url.searchParams.get('q') || r.raw.includes(url.searchParams.get('q')));
     const offset = Number(url.searchParams.get('offset') || 0); return json({ results: all.slice(offset, offset + 25), count: all.length });
