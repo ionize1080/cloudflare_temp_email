@@ -1,0 +1,61 @@
+name: IONACS Navigation deploy
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'navigation/**'
+      - 'shared/passwords.mjs'
+      - 'shared/security.mjs'
+      - '.github/workflows/ionacs-navigation.yml'
+  pull_request:
+    paths:
+      - 'navigation/**'
+      - 'shared/passwords.mjs'
+      - 'shared/security.mjs'
+      - '.github/workflows/ionacs-navigation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ionacs-navigation-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: navigation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: navigation/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --omit=dev --audit-level=high
+  deploy:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: navigation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: navigation/package-lock.json
+      - run: npm ci
+      - name: Prepare cache, configure Turnstile and deploy ionacs.com
+        run: npm run deploy
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
