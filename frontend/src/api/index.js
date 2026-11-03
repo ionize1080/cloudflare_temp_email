@@ -49,6 +49,9 @@ const apiFetch = async (path, options = {}) => {
         if (response.status === 401 && openSettings.value.needAuth) {
             showAuth.value = true;
         }
+        if(response.status===401 && path.startsWith('/api/') && !['/api/address_login','/api/navigation_login'].includes(path)){
+            jwt.value='';settings.value={fetched:true,address:''};
+        }
         if (response.status >= 300) {
             const error = new Error(`[${response.status}]: ${responseMessage(response.data)}`); error.resetSendId = response.data?.reset_send_id; throw error;
         }
@@ -124,9 +127,6 @@ const getOpenSettings = async (message, notification) => {
 
 const getSettings = async (options = {}) => {
     try {
-        if (typeof jwt.value != 'string' || jwt.value.trim() === '' || jwt.value === 'undefined') {
-            return "";
-        }
         const res = await apiFetch("/api/settings", options);
         settings.value = {
             address: res["address"],
@@ -135,6 +135,9 @@ const getSettings = async (options = {}) => {
             send_access_status: res["send_access_status"] || (res["send_balance"] > 0 ? 'approved' : 'not_requested'),
             send_requested_at: res["send_requested_at"] || null,
         };
+    } catch(error){
+        if(error.message?.includes('[401]'))return '';
+        throw error;
     } finally {
         settings.value.fetched = true;
     }

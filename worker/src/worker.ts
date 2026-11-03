@@ -1,5 +1,9 @@
 import { loginSecurity } from './login_security';
 import { validSession } from '../../shared/sessions.mjs';
+import { getCookie } from 'hono/cookie';
+import { navigationLogin, navigationLogout } from './navigation_login';
+import { MAIL_COOKIE, validateMailIdentity } from '../../shared/navigation-sso.mjs';
+
 import { Context, Hono } from 'hono'
 import { cors } from 'hono/cors';
 import { jwt } from 'hono/jwt'
@@ -189,17 +193,28 @@ app.use('/api/*', async (c, next) => {
 	) {
 		await checkoutUserRolePayload(c);
 	}
-	if (c.req.path.startsWith("/api/address_login")) {
+	if (c.req.path.startsWith("/api/address_login") || c.req.path === "/api/navigation_login" || c.req.path === "/api/navigation_logout") {
 		await next();
 		return;
 	}
 
 	try {
-		return await jwt({ secret: c.env.JWT_SECRET, alg: "HS256" })(c, async () => {
+		const bearer = (c.req.header('Authorization') || '').replace(/^Bearer\s*/i,'').trim();
+        const mailCookie = getCookie(c,MAIL_COOKIE);
+        if(!bearer && mailCookie){
+            const payload=await Jwt.verify(mailCookie,c.env.JWT_SECRET,'HS256');
+            if(payload.scope!=='navigation-mail')return c.text('邮箱登录已过期',401);
+            const identity=await validateMailIdentity(c.env.DB,payload);
+            if(!identity || !await validSession(c.env.DB,payload,'mailbox'))return c.text('邮箱登录已过期，请从导航页重新进入',401);
+            c.set('jwtPayload',{address:identity.name,address_id:identity.id});
+            await next();return;
+        }
+        return await jwt({ secret: c.env.JWT_SECRET, alg: "HS256" })(c, async () => {
             const payload = c.get('jwtPayload');
             if (!await validSession(c.env.DB,payload,'mailbox')) { c.res=c.text('邮箱凭据已失效，请重新登录',401); return; }
             await next();
         });
+
 	} catch (e) {
 		console.warn(JSON.stringify({event:"mailbox_auth_rejected"}));
 		const lang = c.get("lang") || c.env.DEFAULT_LANG;
@@ -207,6 +222,9 @@ app.use('/api/*', async (c, next) => {
 		return c.text(msgs.InvalidAddressCredentialMsg, 401)
 	}
 });
+app.post('/api/navigation_login',navigationLogin);
+app.post('/api/navigation_logout',navigationLogout);
+
 // user_api auth
 app.use('/user_api/*', async (c, next) => {
 	if (

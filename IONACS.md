@@ -126,3 +126,12 @@ Deployment: Worker `dabdf818-9906-4265-a7d4-1a7d70b5027f`, Pages `bbfca71f.front
 At the owner's subsequent request, trusted-server edge exceptions were extended for this zone only: existing AWS IPv4 `47.131.128.75` retained, AWS IPv6 `2406:da18:cbc:de00:3495:6a49:de52:a9f8` added, and status Oracle IPv4 `168.107.53.146` added. The Oracle host has no global IPv6 address. Rules match exact addresses, not a subnet or the markets host. IP allow rules exempt matching server traffic from edge challenges; rule `95740929cb91496799779d33245ca278` additionally skips zone Browser Integrity Check/Security Level for those addresses. Application Turnstile, passwords, ownership, administrator authorization and API rate limits still apply. Revalidate or remove the exceptions if a server address changes or is released.
 
 Cloudflare's managed Pages platform may still return error 1010 for its blocked default `Python-urllib` user agent; a zone IP exception does not disable this platform control. Service probes use the truthful `IONACS-Service-Monitor/1.0` user agent. Both servers passed 19 HTTP checks each with this service identity after the rule changes, including healthy storage and denied unauthenticated admin/login requests. Rule snapshots and verification results are in ignored `.private/security-server-*` and `.private/security-allow-verification-*` files.
+
+
+### Login availability regression (2026-11-03)
+
+A navigation build based on older GitHub mailbox source redeployed both mailworker and Pages, restoring the obsolete global Access gate. The November 2 security commits had only existed locally. The merged release preserves navigation SSO and the hardened public mailbox; navigation deployment now publishes only its own Worker. The merged source must be pushed before subsequent builds.
+
+Regression coverage now includes public Pages access with IMAP still protected, single-use navigation handoff, mailbox cookie authorization and authentication-version revocation. All 55 mailbox Node tests and 24 navigation tests passed, with Worker lint and frontend production build passing. Anonymous browser verification shows the mailbox login form again. No external email was sent or user password changed.
+
+Restored production: Worker `43c178d0-00d9-4fa6-a4b7-907024a996e3`, Pages `65132087.frontend-8bi.pages.dev`.

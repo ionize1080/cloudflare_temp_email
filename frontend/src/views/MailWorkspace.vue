@@ -153,7 +153,8 @@ function download(row) {
   const blob = new Blob([row.raw], { type: folder.value === 'sent' ? 'application/json' : 'message/rfc822' });
   const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = `mail-${row.id}.${folder.value === 'sent' ? 'json' : 'eml'}`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-function logout() {
+async function logout() {
+  try { await api.fetch('/api/navigation_logout',{method:'POST',quiet:true}); } catch { message.error('退出未完成，请稍后重试。'); return; }
   jwt.value = ''; auth.value = ''; adminAuth.value = ''; userJwt.value = ''; userSettings.value = {}; settings.value = { fetched: true, address: '' }; drafts.value = {}; flags.value = {};
   for (const key of ['jwt', 'auth', 'adminAuth', 'userJwt', 'sendMailModel', 'addressPassword']) { localStorage.removeItem(key); sessionStorage.removeItem(key); }
   location.assign('/');
@@ -172,6 +173,13 @@ watch(indexTab, value => { if (value === 'sendmail') { draft.value = restoreDraf
 let timer;
 onMounted(async () => {
   window.addEventListener('beforeunload',beforeUnload); document.title = 'IONACS Mail'; document.addEventListener('keydown', keyboard);
+  const handoff=new URLSearchParams(location.hash.slice(1)).get('ionacs-ticket');
+  if(handoff){
+    history.replaceState(null,'',location.pathname+location.search);
+    try{await api.fetch('/api/navigation_login',{method:'POST',quiet:true,body:JSON.stringify({ticket:handoff})});jwt.value='';}
+    catch(e){message.error(e.message);}
+  }
+
   await api.getOpenSettings(message, notification); needsSitePassword.value = openSettings.value.needAuth && !auth.value;
   try { await api.getSettings(); } catch (e) { error.value = e.message; }
   loginReady.value = true;

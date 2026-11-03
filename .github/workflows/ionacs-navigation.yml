@@ -1,0 +1,37 @@
+name: IONACS Navigation checks
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'navigation/**'
+      - 'shared/**'
+      - '.github/workflows/ionacs-navigation.yml'
+  pull_request:
+    paths:
+      - 'navigation/**'
+      - 'shared/**'
+      - '.github/workflows/ionacs-navigation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ionacs-navigation-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: navigation
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: navigation/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --audit-level=high

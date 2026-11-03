@@ -8,8 +8,12 @@ import {hashPassword,passwordDigest} from '../shared/passwords.mjs';
 import {sessionClaims,validSession,storeChallenge,consumeChallenge,validChallenge} from '../shared/sessions.mjs';
 import {verifyTurnstile} from '../shared/turnstile.mjs';
 import {publicHttpsUrl,webhookRequest} from '../shared/outbound-url.mjs';
+import {onRequest as pagesRequest} from '../pages/functions/_middleware.js';
+import {createMailTicket} from '../shared/navigation-sso.mjs';
 
 const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('../db/schema.sql',import.meta.url),'utf8'));
+sql.exec(readFileSync(new URL('../navigation/migrations/0001_navigation.sql',import.meta.url),'utf8'));
+sql.exec(readFileSync(new URL('../navigation/migrations/0003_mail_sessions.sql',import.meta.url),'utf8'));
 const db={async batch(statements){sql.exec('BEGIN');try{const r=[];for(const s of statements)r.push(await s.run());sql.exec('COMMIT');return r;}catch(e){sql.exec('ROLLBACK');throw e;}},prepare(query){const s=sql.prepare(query);let args=[];return {bind(...v){args=v;return this;},async run(){return {...s.run(...args),success:true};},async first(column){const row=s.get(...args);return column?row?.[column]??null:row||null;},async all(){return {results:s.all(...args)};}};}};
 sql.prepare('INSERT INTO address(id,name,password) VALUES(1,?,?)').run('owner@ionacs.com',await hashPassword('original-secure-password'));
 sql.prepare('INSERT INTO address(id,name,password) VALUES(2,?,?)').run('other@ionacs.com',await hashPassword('other-secure-password'));
@@ -22,6 +26,26 @@ const run=(path,init={},bindings=env)=>worker.fetch(new Request('https://mail.io
 const post=(path,body,headers={},bindings=env)=>run(path,{method:'POST',headers:{'Content-Type':'application/json',...headers},body:JSON.stringify(body)},bindings);
 const bearer=token=>({Authorization:'Bearer '+token});
 let currentMailbox,userSession;
+
+test('public Pages login bypasses Access while the IMAP bridge retains it',async()=>{
+ const context=path=>({request:new Request('https://mail.ionacs.com'+path),env:{BACKEND:{fetch:async()=>Response.json({cfTurnstileSiteKey:'configured'})}},next:async()=>new Response('<html>Mailbox login</html>',{headers:{'Content-Type':'text/html'}})});
+ const page=await pagesRequest(context('/'));assert.equal(page.status,200);assert.match(await page.text(),/Mailbox login/);
+ assert.equal((await pagesRequest(context('/open_api/settings'))).status,200);
+ assert.equal((await pagesRequest(context('/imap_api/session'))).status,401);
+});
+
+test('navigation handoff remains compatible with revocable mailbox sessions',async()=>{
+ const session='a'.repeat(48),stored=sql.prepare('SELECT password FROM address WHERE id=2').get().password;
+ sql.prepare('INSERT INTO nav_sessions VALUES(?,?,?,?)').run(await passwordDigest(session),2,await passwordDigest(stored),Math.floor(Date.now()/1000)+3600);
+ const ticket=await createMailTicket(db,session,1);
+ const bindings={...env,AUTH_RATE_LIMITER:{limit:async()=>({success:true})}};
+ const exchanged=await post('/api/navigation_login',{ticket},{Origin:'https://mail.ionacs.com'},bindings);
+ assert.equal(exchanged.status,200);const cookie=exchanged.headers.get('set-cookie').split(';')[0];
+ assert.equal((await run('/api/settings',{headers:{Cookie:cookie}},bindings)).status,200);
+ assert.equal((await post('/api/navigation_login',{ticket},{Origin:'https://mail.ionacs.com'},bindings)).status,401);
+ sql.prepare("INSERT INTO auth_versions(kind,subject,version) VALUES('mailbox',2,1) ON CONFLICT(kind,subject) DO UPDATE SET version=version+1").run();
+ assert.equal((await run('/api/settings',{headers:{Cookie:cookie}},bindings)).status,401);
+});
 
 test('password changes require current password and revoke old sessions immediately',async()=>{
  const login=await post('/api/address_login',{email:'owner@ionacs.com',password:'original-secure-password',password_format:'plain'});assert.equal(login.status,200);const old=(await login.json()).jwt;
