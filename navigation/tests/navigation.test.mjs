@@ -73,3 +73,17 @@ test('expired tickets and signed-out navigation sessions cannot grant mailbox ac
  const fresh=await createMailTicket(db,account.token,24);await call('/logout',{method:'POST',user:account});await assert.rejects(consumeMailTicket(db,fresh));
  await assert.rejects(createMailTicket(db,account.token,10000));
 });
+
+test('bookmark icon endpoints require ownership and same-origin refresh; cached images stay private',async()=>{
+ const created=await(await call('/bookmarks',{method:'POST',user:owner,data:{title:'Icon test',url:'https://bbc.com'}})).json();
+ const path='/bookmarks/'+created.id+'/icon';
+ assert.equal((await call(path)).status,401);
+ assert.equal((await call(path,{user:other})).status,404);
+ assert.equal((await call(path,{method:'POST',user:owner,headers:{Origin:'https://evil.example'}})).status,403);
+ const old=env.WALLPAPERS;env.ICON_LIMITER={limit:async()=>({success:true})};
+ env.WALLPAPERS={getWithMetadata:async()=>({value:new Uint8Array([137,80,78,71]),metadata:{type:'image/png',checkedAt:Math.floor(Date.now()/1000),attemptedAt:Math.floor(Date.now()/1000)}})};
+ try{const res=await call(path,{user:owner});assert.equal(res.status,200);assert.equal(res.headers.get('Content-Type'),'image/png');assert.match(res.headers.get('Cache-Control'),/private, no-store/);
+ assert.equal((await call(path,{method:'POST',user:owner})).status,200);
+ env.ICON_LIMITER={limit:async()=>({success:false})};assert.equal((await call(path,{user:owner})).status,429);
+ }finally{env.WALLPAPERS=old;}
+});

@@ -1,5 +1,6 @@
 import { NAV_SESSION_SECONDS, MAIL_SESSION_HOURS, createMailTicket } from '../../shared/navigation-sso.mjs';
 import { initializeBookmarks } from './bookmarks.mjs';
+import { cachedIcon, iconDataURL } from './site-icons.mjs';
 import { hashPassword, verifyPassword, passwordDigest, randomAppPassword } from '../../shared/passwords.mjs';
 
 import { refreshWallpapers, serveWallpaper } from './wallpapers.mjs';
@@ -108,6 +109,18 @@ async function handle(req, env, ctx, state) {
     return json({ success: true }, 200, { 'Set-Cookie': cookie('', 0) });
   }
   const user = await session(req, env, true, state);
+  const bookmarkIcon = /^\/api\/bookmarks\/([a-f0-9-]{36})\/icon$/.exec(path);
+  if (bookmarkIcon && ['GET', 'POST'].includes(req.method)) {
+    const bookmark = await env.DB.prepare('SELECT url,address_id FROM nav_bookmarks WHERE id=? AND address_id=?').bind(bookmarkIcon[1],user.id).first();
+    if (!bookmark) fail('收藏不存在',404);
+    await rate(env,'ICON_LIMITER','icons:'+user.id);
+    let result;
+    try { result = await cachedIcon(env,bookmark,req.method==='POST'); }
+    catch { fail('该网址无法获取公开图标',422); }
+    if (req.method==='POST') return json({ refreshed:result.refreshed, available:!!result.value?.byteLength, updatedAt:result.metadata?.updatedAt || null, image:result.refreshed?iconDataURL(result.value,result.metadata.type):null, message:result.refreshed?'图标已刷新':result.unavailable?'暂时无法获取新图标，已保留原图标':'刚刚已检查，请稍后再刷新' });
+    if (!result.value?.byteLength || !result.metadata?.type) return new Response(null,{status:404});
+    return new Response(result.value,{headers:{'Content-Type':result.metadata.type,'Cache-Control':'private, no-store','Content-Disposition':'inline'}});
+  }
   if(path==='/api/mail-link'&&req.method==='POST'){
     const prefs=await env.DB.prepare('SELECT mail_session_hours FROM nav_preferences WHERE address_id=?').bind(user.id).first();
     const ticket=await createMailTicket(env.DB,tokenOf(req),prefs?.mail_session_hours||24);

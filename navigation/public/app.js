@@ -21,8 +21,8 @@ function renderBookmarks(){
  $('#collection-label').textContent=user?`${links.length} 个收藏`:'SHORTCUTS';
  for(const item of links){
   const wrap=document.createElement('div');wrap.className='shortcut';
-  const link=document.createElement('a');link.href=item.url;link.rel='noopener';link.title=item.title;
-  const mark=document.createElement('span'),kind=websiteIcon(item.url);mark.className='shortcut-icon icon-'+kind;setWebsiteMark(mark,item.url);
+  const link=document.createElement('a');link.href=item.url;link.target='_blank';link.rel='noopener noreferrer';link.title=item.title;
+  const mark=document.createElement('span'),kind=websiteIcon(item.url);mark.className='shortcut-icon icon-'+kind;setWebsiteMark(mark,item.url,item);
   const title=document.createElement('span');title.className='shortcut-title';title.textContent=item.title;
   const domain=document.createElement('span');domain.className='shortcut-domain';domain.textContent=new URL(item.url).hostname.replace(/^www\./,'');
   link.append(mark,title,domain);wrap.append(link);
@@ -45,9 +45,14 @@ function openAuth(){showDialog('#auth-dialog');setAuthMode('login');}
 $('#account-button').addEventListener('click',()=>user?openCustomize():openAuth());$('#tab-login').addEventListener('click',()=>setAuthMode('login'));$('#tab-register').addEventListener('click',()=>setAuthMode('register'));
 $('#auth-form').addEventListener('submit',async e=>{e.preventDefault();$('#auth-submit').disabled=true;$('#auth-error').textContent='';const values=Object.fromEntries(new FormData(e.target));try{if(!challengeToken)throw new Error('请先完成人机验证');const data=await send('/'+authMode,'POST',{...values,token:challengeToken});user=data.user;$('#auth-dialog').close();e.target.reset();await loadAccount();toast(authMode==='register'?'账户已创建，欢迎加入':'登录成功');}catch(err){$('#auth-error').textContent=err.message;if(user)toast(err.message);}finally{challengeToken='';if(window.turnstile&&widgetId!==undefined)window.turnstile.reset(widgetId);}});
 $('#logout-button').addEventListener('click',async()=>{try{await send('/logout','POST');clearAccount();toast('已退出登录');}catch(e){toast(e.message);}});
-function setWebsiteMark(element,url){
+function setWebsiteMark(element,url,item=null){
  const kind=websiteIcon(url),site=matchWebsite(url);element.replaceChildren();
  if(site&&productVectors.has(site.id)){element.innerHTML=icon(site.id);return;}
+ if(user&&item&&kind==='globe'&&!site?.icon){
+  element.innerHTML=icon('globe');
+  const image=document.createElement('img');image.alt='';image.width=28;image.height=28;
+  image.onload=()=>element.replaceChildren(image);image.src=item.iconData||'/api/bookmarks/'+item.id+'/icon?v='+(item.iconRevision||0);return;
+ }
  if(kind!=='globe'||!site||!site.icon){element.innerHTML=icon(kind);return;}
  const image=document.createElement('img');image.src=site.icon;image.alt='';image.width=28;image.height=28;
  image.onerror=()=>{element.innerHTML=icon('globe');};element.append(image);
@@ -62,7 +67,9 @@ function updateBookmarkPreview(){
  $('#bookmark-preview-title').textContent=form.elements.title.value.trim()||'你的网站';
  let url;try{url=new URL(value);}catch{}
  $('#bookmark-preview-domain').textContent=url?.hostname||'名称与图标将在这里预览';
- setWebsiteMark($('#bookmark-preview-icon'),value);
+ const saved=editing&&editing.url===value?editing:null;
+ setWebsiteMark($('#bookmark-preview-icon'),value,saved);
+ $('#refresh-bookmark-icon').hidden=!saved||websiteIcon(value)!=='globe'||!!matchWebsite(value)?.icon;
 }
 function chooseSuggestion(site){
  const form=$('#bookmark-form');form.elements.title.value=site.name;form.elements.url.value=site.url;
@@ -105,6 +112,11 @@ function openBookmark(item=null){
 }
 
 $('#bookmark-form').addEventListener('submit',async e=>{e.preventDefault();const button=e.target.querySelector('[type=submit]');button.disabled=true;try{await send(editing?'/bookmarks/'+editing.id:'/bookmarks',editing?'PATCH':'POST',Object.fromEntries(new FormData(e.target)));bookmarks=(await api('/bookmarks')).bookmarks;renderBookmarks();$('#bookmark-dialog').close();toast('收藏已保存');}catch(err){e.target.querySelector('.form-error').textContent=err.message;}finally{button.disabled=false;}});
+$('#refresh-bookmark-icon').addEventListener('click',async()=>{
+ if(!editing)return;const item=editing,button=$('#refresh-bookmark-icon');button.disabled=true;button.textContent='正在获取…';
+ try{const result=await send('/bookmarks/'+item.id+'/icon','POST');item.iconRevision=Date.now();if(result.image)item.iconData=result.image;renderBookmarks();if(editing===item)updateBookmarkPreview();toast(result.message);}
+ catch(error){toast(error.message);}finally{button.disabled=false;button.textContent='刷新图标';}
+});
 $('#delete-bookmark').addEventListener('click',async()=>{if(!editing)return;try{await send('/bookmarks/'+editing.id,'DELETE');bookmarks=(await api('/bookmarks')).bookmarks;renderBookmarks();$('#bookmark-dialog').close();toast('收藏已删除');}catch(e){$('#bookmark-form .form-error').textContent=e.message;}});
 function displayPreferenceFields(){const mode=$('#preferences-form').elements.wallpaper_mode.value;$('#color-field').hidden=mode!=='color';$('#image-field').hidden=mode!=='image';}
 function renderGallery(){const grid=$('#wallpaper-grid');grid.replaceChildren();if(!images.length){grid.textContent='壁纸暂未准备好，请稍后再试。';return;}for(const item of images){const button=document.createElement('button');button.type='button';button.className='wallpaper-tile';button.title=item.copyright;const img=document.createElement('img');img.src=item.thumbnail;img.alt=item.title;img.loading='lazy';const date=document.createElement('span');date.textContent=item.day.slice(0,4)+'.'+item.day.slice(4,6)+'.'+item.day.slice(6);button.append(img,date);button.addEventListener('click',()=>{const form=$('#preferences-form');form.elements.wallpaper_mode.value='image';form.elements.wallpaper_url.value=item.originalURL;displayPreferenceFields();grid.querySelectorAll('button').forEach(b=>b.classList.remove('selected'));button.classList.add('selected');});grid.append(button);}}
@@ -125,6 +137,6 @@ document.addEventListener('keydown',e=>{if(e.key==='/'&&!e.metaKey&&!e.ctrlKey&&
 document.addEventListener('click',async event=>{
  const link=event.target.closest('a[href]');if(!user||!link||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
  const target=new URL(link.href);if(target.origin!=='https://mail.ionacs.com'||target.pathname!=='/')return;
- event.preventDefault();const tab=window.open('about:blank','_blank');if(tab)tab.opener=null;
- try{const result=await send('/mail-link','POST');if(tab)tab.location.replace(result.url);else location.assign(result.url);}catch(error){if(tab)tab.close();toast(error.message);}
+ event.preventDefault();const tab=window.open('about:blank','_blank');if(!tab){toast('请允许此网站打开新标签页后重试');return;}tab.opener=null;
+ try{const result=await send('/mail-link','POST');tab.location.replace(result.url);}catch(error){if(tab)tab.close();toast(error.message);}
 });

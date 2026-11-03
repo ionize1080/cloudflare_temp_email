@@ -799,7 +799,327 @@ export const websites = [
     "aliases": "apple 苹果 官网",
     "company": "Apple 苹果",
     "icon": "/site-icons/apple.png"
-  }
+  },
+{
+  "id": "reuters",
+  "name": "Reuters 路透社",
+  "url": "https://www.reuters.com",
+  "aliases": "reuters 路透 路透社 国际新闻 通讯社",
+  "company": "Reuters",
+  "icon": null
+},
+{
+  "id": "ap-news",
+  "name": "AP 美联社",
+  "url": "https://apnews.com",
+  "aliases": "ap associated press 美联社 国际新闻 通讯社",
+  "company": "Associated Press",
+  "icon": null
+},
+{
+  "id": "bbc-news",
+  "name": "BBC News",
+  "url": "https://www.bbc.com/news",
+  "aliases": "bbc 英国广播公司 英国 新闻",
+  "company": "BBC",
+  "icon": null
+},
+{
+  "id": "cnn",
+  "name": "CNN",
+  "url": "https://www.cnn.com",
+  "aliases": "cnn 美国有线电视新闻网 国际 新闻",
+  "company": "CNN",
+  "icon": null
+},
+{
+  "id": "nytimes",
+  "name": "The New York Times 纽约时报",
+  "url": "https://www.nytimes.com",
+  "aliases": "nyt nytimes 纽约时报 新闻 美国",
+  "company": "New York Times",
+  "icon": null
+},
+{
+  "id": "wsj",
+  "name": "The Wall Street Journal 华尔街日报",
+  "url": "https://www.wsj.com",
+  "aliases": "wsj 华尔街日报 财经 新闻",
+  "company": "Dow Jones",
+  "icon": null
+},
+{
+  "id": "financial-times",
+  "name": "Financial Times 金融时报",
+  "url": "https://www.ft.com",
+  "aliases": "ft financial times 金融时报 财经 新闻",
+  "company": "Financial Times",
+  "icon": null
+},
+{
+  "id": "bloomberg",
+  "name": "Bloomberg 彭博",
+  "url": "https://www.bloomberg.com",
+  "aliases": "bloomberg 彭博 财经 金融 新闻",
+  "company": "Bloomberg",
+  "icon": null
+},
+{
+  "id": "guardian",
+  "name": "The Guardian 卫报",
+  "url": "https://www.theguardian.com",
+  "aliases": "guardian 卫报 英国 新闻",
+  "company": "Guardian",
+  "icon": null
+},
+{
+  "id": "economist",
+  "name": "The Economist 经济学人",
+  "url": "https://www.economist.com",
+  "aliases": "economist 经济学人 经济学家 财经 新闻",
+  "company": "Economist",
+  "icon": null
+},
+{
+  "id": "washington-post",
+  "name": "The Washington Post 华盛顿邮报",
+  "url": "https://www.washingtonpost.com",
+  "aliases": "washington post 华盛顿邮报 美国 新闻",
+  "company": "Washington Post",
+  "icon": null
+},
+{
+  "id": "cnbc",
+  "name": "CNBC",
+  "url": "https://www.cnbc.com",
+  "aliases": "cnbc 财经 金融 美股 新闻",
+  "company": "NBCUniversal",
+  "icon": null
+},
+{
+  "id": "aljazeera",
+  "name": "Al Jazeera 半岛电视台",
+  "url": "https://www.aljazeera.com",
+  "aliases": "aljazeera 半岛 半岛电视台 国际 新闻",
+  "company": "Al Jazeera",
+  "icon": null
+},
+{
+  "id": "dw",
+  "name": "DW 德国之声",
+  "url": "https://www.dw.com",
+  "aliases": "dw 德国之声 德国 新闻",
+  "company": "Deutsche Welle",
+  "icon": null
+},
+{
+  "id": "france24",
+  "name": "France 24 法国24",
+  "url": "https://www.france24.com",
+  "aliases": "france24 法国24 法国 新闻",
+  "company": "France 24",
+  "icon": null
+},
+{
+  "id": "npr",
+  "name": "NPR 美国公共广播",
+  "url": "https://www.npr.org",
+  "aliases": "npr 美国公共广播 电台 新闻",
+  "company": "NPR",
+  "icon": null
+},
+{
+  "id": "scmp",
+  "name": "South China Morning Post 南华早报",
+  "url": "https://www.scmp.com",
+  "aliases": "scmp 南华早报 香港 新闻",
+  "company": "SCMP",
+  "icon": null
+},
+{
+  "id": "zaobao",
+  "name": "联合早报",
+  "url": "https://www.zaobao.com.sg",
+  "aliases": "zaobao 联合早报 早报 新加坡 新闻",
+  "company": "SPH Media",
+  "icon": null
+},
+{
+  "id": "cna",
+  "name": "CNA 亚洲新闻台",
+  "url": "https://www.channelnewsasia.com",
+  "aliases": "cna 亚洲新闻台 新加坡 亚洲 新闻",
+  "company": "Mediacorp",
+  "icon": null
+},
+{
+  "id": "straits-times",
+  "name": "The Straits Times 海峡时报",
+  "url": "https://www.straitstimes.com",
+  "aliases": "straits 海峡时报 新加坡 新闻",
+  "company": "SPH Media",
+  "icon": null
+},
+{
+  "id": "rthk",
+  "name": "RTHK 香港电台",
+  "url": "https://news.rthk.hk",
+  "aliases": "rthk 香港电台 香港 新闻",
+  "company": "RTHK",
+  "icon": null
+},
+{
+  "id": "xinhua",
+  "name": "新华网",
+  "url": "https://www.news.cn",
+  "aliases": "xinhua 新华网 新华社 新闻 通讯社",
+  "company": "新华社",
+  "icon": null
+},
+{
+  "id": "people-news",
+  "name": "人民网",
+  "url": "https://www.people.com.cn",
+  "aliases": "people 人民网 人民日报 新闻",
+  "company": "人民日报",
+  "icon": null
+},
+{
+  "id": "cctv-news",
+  "name": "央视网新闻",
+  "url": "https://news.cctv.com",
+  "aliases": "cctv 央视 央视新闻 央视网 新闻",
+  "company": "中央广播电视总台",
+  "icon": null
+},
+{
+  "id": "chinanews",
+  "name": "中国新闻网",
+  "url": "https://www.chinanews.com.cn",
+  "aliases": "chinanews 中国新闻网 中新网 中新社 新闻",
+  "company": "中国新闻社",
+  "icon": null
+},
+{
+  "id": "caixin",
+  "name": "财新网",
+  "url": "https://www.caixin.com",
+  "aliases": "caixin 财新 财新网 财经 新闻",
+  "company": "财新",
+  "icon": null
+},
+{
+  "id": "yicai",
+  "name": "第一财经",
+  "url": "https://www.yicai.com",
+  "aliases": "yicai 第一财经 财经 金融 新闻",
+  "company": "第一财经",
+  "icon": null
+},
+{
+  "id": "jiemian",
+  "name": "界面新闻",
+  "url": "https://www.jiemian.com",
+  "aliases": "jiemian 界面 界面新闻 财经 新闻",
+  "company": "上海报业集团",
+  "icon": null
+},
+{
+  "id": "thepaper",
+  "name": "澎湃新闻",
+  "url": "https://www.thepaper.cn",
+  "aliases": "thepaper 澎湃 澎湃新闻 新闻",
+  "company": "上海报业集团",
+  "icon": null
+},
+{
+  "id": "ftchinese",
+  "name": "FT中文网",
+  "url": "https://www.ftchinese.com",
+  "aliases": "ftchinese ft中文网 金融时报中文网 财经 新闻",
+  "company": "Financial Times",
+  "icon": null
+},
+{
+  "id": "36kr",
+  "name": "36氪",
+  "url": "https://36kr.com",
+  "aliases": "36kr 36氪 科技 创投 新闻",
+  "company": "36氪",
+  "icon": null
+},
+{
+  "id": "huxiu",
+  "name": "虎嗅",
+  "url": "https://www.huxiu.com",
+  "aliases": "huxiu 虎嗅 科技 商业 新闻",
+  "company": "虎嗅",
+  "icon": null
+},
+{
+  "id": "ithome",
+  "name": "IT之家",
+  "url": "https://www.ithome.com",
+  "aliases": "ithome it之家 科技 数码 新闻",
+  "company": "软媒",
+  "icon": null
+},
+{
+  "id": "sina-news",
+  "name": "新浪新闻",
+  "url": "https://news.sina.com.cn",
+  "aliases": "sina 新浪新闻 新闻",
+  "company": "新浪",
+  "icon": null
+},
+{
+  "id": "tencent-news",
+  "name": "腾讯新闻",
+  "url": "https://news.qq.com",
+  "aliases": "qq 腾讯新闻 新闻",
+  "company": "腾讯 Tencent",
+  "icon": null
+},
+{
+  "id": "yahoo-news",
+  "name": "Yahoo News 雅虎新闻",
+  "url": "https://news.yahoo.com",
+  "aliases": "yahoo 雅虎 雅虎新闻 新闻",
+  "company": "Yahoo",
+  "icon": null
+},
+{
+  "id": "abc-news",
+  "name": "ABC News",
+  "url": "https://abcnews.go.com",
+  "aliases": "abc 美国广播公司 新闻",
+  "company": "Disney",
+  "icon": null
+},
+{
+  "id": "nbc-news",
+  "name": "NBC News",
+  "url": "https://www.nbcnews.com",
+  "aliases": "nbc 美国全国广播公司 新闻",
+  "company": "NBCUniversal",
+  "icon": null
+},
+{
+  "id": "cbs-news",
+  "name": "CBS News",
+  "url": "https://www.cbsnews.com",
+  "aliases": "cbs 哥伦比亚广播公司 新闻",
+  "company": "CBS",
+  "icon": null
+},
+{
+  "id": "nikkei",
+  "name": "Nikkei Asia 日经亚洲",
+  "url": "https://asia.nikkei.com",
+  "aliases": "nikkei 日经 日经亚洲 日本 财经 新闻",
+  "company": "Nikkei",
+  "icon": null
+}
 ];
 const normalize = value => value.toLocaleLowerCase().trim().replace(/^https?:\/\//,'').replace(/^www\./,'').replace(/\/$/,'');
 export function suggestWebsites(query, limit = 6) {

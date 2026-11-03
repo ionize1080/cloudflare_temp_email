@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { websites, suggestWebsites, matchWebsite } from '../public/catalog.mjs';
-test('directory contains 100 distinct products with secure destinations',()=>{
- assert.equal(websites.length,100);assert.equal(new Set(websites.map(s=>s.id)).size,100);
+test('directory contains 140 distinct products with secure destinations',()=>{
+ assert.equal(websites.length,140);assert.equal(new Set(websites.map(s=>s.id)).size,140);
  for(const site of websites)assert.equal(new URL(site.url).protocol,'https:');
 });
 test('product queries prioritize their exact product; company queries include related products',()=>{
@@ -22,4 +22,8 @@ test('icons resolve by product subdomain and path, without matching unrelated lo
  assert.equal(matchWebsite('https://mail.google.com/mail/u/0/').id,'gmail');
  assert.equal(matchWebsite('https://v.qq.com/').id,'tencent-video');
  assert.equal(matchWebsite('https://google.com.evil.example/'),null);
+});
+
+test('news suggestions match Chinese names, abbreviations and official domains',()=>{
+ for(const [query,id] of [['路透社','reuters'],['BBC','bbc-news'],['澎湃','thepaper'],['联合早报','zaobao'],['ftchinese.com','ftchinese'],['nikkei','nikkei']]) assert.equal(suggestWebsites(query)[0].id,id);
 });
